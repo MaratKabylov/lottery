@@ -1,8 +1,9 @@
-import { it, expect, vi } from "vitest";
+import { it, expect, vi, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useRealtime } from "../src/hooks/useEventData";
+afterEach(() => vi.restoreAllMocks());
 const mock = vi.hoisted(() => ({
   status: null as null | ((s: string) => void),
   changed: null as null | (() => void),
@@ -49,4 +50,37 @@ it("Realtime invalidates database queries, reconnect refreshes, offline blocks, 
   expect(hook.result.current).toBe("online");
   hook.unmount();
   expect(mock.remove).toHaveBeenCalled();
+});
+
+it("keeps offline status when late Realtime callbacks arrive", () => {
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  const client = new QueryClient();
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const hook = renderHook(() => useRealtime("event"), { wrapper });
+  expect(hook.result.current).toBe("offline");
+  act(() => mock.status?.("SUBSCRIBED"));
+  expect(hook.result.current).toBe("offline");
+  act(() => mock.status?.("CHANNEL_ERROR"));
+  expect(hook.result.current).toBe("offline");
+});
+
+it("requires a new subscription when changing events and ignores old callbacks", () => {
+  const client = new QueryClient();
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const hook = renderHook(({ id }) => useRealtime(id), {
+    wrapper, initialProps: { id: "first" },
+  });
+  const previousStatus = mock.status;
+  act(() => previousStatus?.("SUBSCRIBED"));
+  expect(hook.result.current).toBe("online");
+  hook.rerender({ id: "second" });
+  expect(hook.result.current).toBe("reconnecting");
+  act(() => previousStatus?.("SUBSCRIBED"));
+  expect(hook.result.current).toBe("reconnecting");
+  act(() => mock.status?.("SUBSCRIBED"));
+  expect(hook.result.current).toBe("online");
 });

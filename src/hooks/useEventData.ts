@@ -13,6 +13,7 @@ export function useRealtime(eventId?: string) {
   >("reconnecting");
   useEffect(() => {
     if (!eventId) return;
+    setConnection(navigator.onLine ? "reconnecting" : "offline");
     let alive = true;
     const invalidate = () => {
       void client.invalidateQueries({ queryKey: ["event", eventId] });
@@ -33,11 +34,13 @@ export function useRealtime(eventId?: string) {
       .subscribe((status) => {
         if (!alive) return;
         setConnection(
-          status === "SUBSCRIBED" && navigator.onLine
-            ? "online"
-            : status === "CLOSED"
-              ? "offline"
-              : "reconnecting",
+          !navigator.onLine
+            ? "offline"
+            : status === "SUBSCRIBED"
+              ? "online"
+              : status === "CLOSED"
+                ? "offline"
+                : "reconnecting",
         );
         if (status === "SUBSCRIBED") invalidate();
       });
@@ -59,20 +62,24 @@ export function useRealtime(eventId?: string) {
 }
 
 export function useEventData(eventId: string, includeParticipants = false) {
+  // Reconcile host controls with the database even when a notification is lost.
   const event = useQuery({
     queryKey: ["event", eventId, "details"],
     queryFn: () => getEvent(eventId),
     enabled: Boolean(eventId),
+    refetchInterval: 15_000,
   });
   const prizes = useQuery({
     queryKey: ["event", eventId, "prizes"],
     queryFn: () => listPrizes(eventId),
     enabled: Boolean(eventId),
+    refetchInterval: 15_000,
   });
   const draws = useQuery({
     queryKey: ["event", eventId, "draws"],
     queryFn: () => listDraws(eventId),
     enabled: Boolean(eventId),
+    refetchInterval: 15_000,
   });
   const participants = useQuery({
     queryKey: ["event", eventId, "participants"],
