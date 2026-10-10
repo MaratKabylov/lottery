@@ -9,6 +9,7 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase, isConfigured } from "../../lib/supabase";
 import type { Profile } from "../../types/database";
 import { useQueryClient } from "@tanstack/react-query";
+import { withTimeout } from "../../lib/withTimeout";
 
 type AuthState = {
   session: Session | null;
@@ -50,11 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setState({ session, profile: null, loading: true, error: null });
       try {
-        const { data, error } = await supabase
+        const { data, error } = await withTimeout(supabase
           .from("profiles")
           .select("*")
           .eq("id", session.user.id)
-          .maybeSingle();
+          .maybeSingle(), "Не удалось загрузить права доступа");
         if (alive && token === generation)
           setState({
             session,
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
       }
     }
-    void supabase.auth.getSession().then(({ data, error }) => {
+    void withTimeout(supabase.auth.getSession(), "Не удалось проверить сессию. Попробуйте войти снова.").then(({ data, error }) => {
       if (!alive || generation !== 0) return;
       if (error)
         setState({
@@ -82,6 +83,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error: error.message,
         });
       else void load(data.session, ++generation);
+    }).catch(() => {
+      if (!alive || generation !== 0) return;
+      setState({
+        session: null,
+        profile: null,
+        loading: false,
+        error: "Не удалось проверить сессию. Попробуйте войти снова.",
+      });
     });
     // Defer profile requests outside the Auth callback to avoid its internal lock.
     const { data: listener } = supabase.auth.onAuthStateChange(

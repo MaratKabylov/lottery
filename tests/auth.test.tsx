@@ -75,3 +75,35 @@ it("shows an access error when a profile request rejects", async () => {
   expect(hook.result.current.profile).toBeNull();
   expect(hook.result.current.error).toBe("Не удалось загрузить права доступа");
 });
+
+it("releases initial loading when reading the stored session rejects", async () => {
+  mock.getSession.mockRejectedValue(new Error("Session unavailable"));
+  const hook = setup();
+  await act(async () => { await Promise.resolve(); });
+  expect(hook.result.current.loading).toBe(false);
+  expect(hook.result.current.error).toContain("Не удалось проверить сессию");
+});
+
+it("releases initial loading when the session request never responds", async () => {
+  mock.getSession.mockImplementation(() => new Promise(() => {}));
+  const hook = setup();
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+  expect(hook.result.current.loading).toBe(false);
+  expect(hook.result.current.error).toContain("Не удалось проверить сессию");
+});
+
+it("ends a stalled profile request and ignores its late result", async () => {
+  let resolve!: (value: unknown) => void;
+  mock.profile.mockImplementation(() => new Promise((done) => { resolve = done; }));
+  const hook = setup();
+  await act(async () => {
+    mock.listener?.("SIGNED_IN", session);
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(hook.result.current.loading).toBe(true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+  expect(hook.result.current.loading).toBe(false);
+  expect(hook.result.current.error).toBe("Не удалось загрузить права доступа");
+  await act(async () => { resolve({ data: { id: "admin", role: "admin" }, error: null }); });
+  expect(hook.result.current.profile).toBeNull();
+});

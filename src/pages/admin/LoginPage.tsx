@@ -6,6 +6,7 @@ import { supabase } from "../../lib/supabase";
 import { Brand } from "../../components/ui/Brand";
 import { ErrorNotice } from "../../components/ui/Feedback";
 import { useAction } from "../../hooks/useAction";
+import { withTimeout } from "../../lib/withTimeout";
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -19,15 +20,16 @@ export default function LoginPage() {
     !location.state.from.startsWith("//")
       ? location.state.from
       : "/admin/events";
-  if (auth.session && auth.profile && !auth.loading)
+  // The route guard also explains a missing staff profile after successful login.
+  if (auth.session && !auth.loading && !auth.error)
     return <Navigate to={returnTo} replace />;
   function submit(e: FormEvent) {
     e.preventDefault();
     void action.run(async () => {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
+      const { error } = await withTimeout(supabase.auth.signInWithPassword({
+        email: email.trim(),
         password,
-      });
+      }), "Сервер не ответил вовремя. Проверьте соединение и попробуйте войти снова.");
       if (error) throw error;
     });
   }
@@ -86,9 +88,11 @@ export default function LoginPage() {
             />
             <button
               className="button"
+              type="submit"
               disabled={action.pending || auth.loading}
+              aria-busy={action.pending || auth.loading}
             >
-              Войти <ArrowRight size={18} />
+              {action.pending ? "Входим…" : auth.loading ? "Проверяем доступ…" : "Войти"} <ArrowRight size={18} />
             </button>
           </form>
           <p className="small muted">
