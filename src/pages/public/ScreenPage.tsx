@@ -26,7 +26,9 @@ export default function ScreenPage() {
     screen.data?.state.mode === "drawing" && remaining > 0,
   );
   const winner = Boolean(
-    screen.data?.winner && screen.data.state.mode !== "waiting" && !drawing,
+    screen.data?.winner &&
+      (screen.data.state.mode === "winner" || screen.data.state.mode === "drawing") &&
+      !drawing,
   );
   const drawId = screen.data?.state.current_draw_id;
   useEffect(() => {
@@ -115,7 +117,17 @@ export default function ScreenPage() {
       </header>
       <section className="screen-content">
         <span className="eyebrow">{event.name}</span>
-        {drawing ? (
+        {state.mode === "countdown" ? (
+          <>
+            <h1>{remaining > 0 ? "Розыгрыш скоро начнётся" : "Готовы к розыгрышу?"}</h1>
+            {remaining > 0 && (
+              <div className="screen-countdown" role="timer">
+                {Math.ceil(remaining / 1000)}
+              </div>
+            )}
+            <p>{remaining > 0 ? "Приготовьте свой номер" : "Ждём старта от ведущего"}</p>
+          </>
+        ) : drawing ? (
           <>
             <h1>
               Ваш счастливый

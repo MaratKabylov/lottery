@@ -435,6 +435,53 @@ await test("check-in validates input and scopes phone lookup to its event", asyn
     await assert.rejects(query("select public.staff_check_in($1,$2,null)", [event, second.ticket_number]), /состояние присутствия/);
   });
 });
+await test("screen commands reject anonymous and non-staff callers", async () => {
+  for (const [role, user, message] of [["anon", null, /permission denied/], ["authenticated", null, /Доступ запрещён/], ["authenticated", "00000000-0000-0000-0000-000000000099", /Доступ запрещён/]]) {
+    await asRole(role, user, async () => {
+      await assert.rejects(query("select public.set_screen_mode($1,'paused',null)", [event]), message);
+    });
+  }
+});
+await test("screen commands are audited, protect pending draws and enforce pause/countdown on the server", async () => {
+  const [{ id: controlled }] = await query("insert into public.events(name,slug,status,require_phone) values ('Screen controls','screen-controls','active',false) returning id");
+  const [{ id: gift }] = await query("insert into public.prizes(event_id,name) values ($1,'Gift') returning id", [controlled]);
+  await asRole("service_role", null, async () => query("select public.register_participant('screen-controls','Guest',null,null)"));
+  await asRole("authenticated", host, async () => {
+    for (const [mode, seconds] of [[null, null], ['winner', null], ['drawing', null], ['countdown', null], ['countdown', 0], ['countdown', 601], ['paused', 30]]) {
+      await assert.rejects(query("select public.set_screen_mode($1,$2,$3)", [controlled, mode, seconds]), /режим|длительность|Длительность/);
+    }
+    await query("select public.set_screen_mode($1,'paused',null)", [controlled]);
+    await assert.rejects(query("select public.draw_winner($1,$2)", [controlled, gift]), /паузы/);
+    assert.equal((await query("select count(*)::int as n from public.draws where event_id=$1", [controlled]))[0].n, 0);
+    await query("select public.set_screen_mode($1,'countdown',30)", [controlled]);
+    await assert.rejects(query("select public.draw_winner($1,$2)", [controlled, gift]), /обратного отсчёта/);
+  });
+  const [{ s }] = await asRole("anon", null, async () => query("select public.get_public_screen('screen-controls') as s"));
+  assert.equal(s.state.mode, 'countdown');
+  assert.equal(s.winner, null);
+  assert.ok(Date.parse(s.state.countdown_end) > Date.parse(s.server_time));
+  await query("update public.event_screen_state set countdown_end=clock_timestamp()-interval '1 second' where event_id=$1", [controlled]);
+  await asRole("authenticated", host, async () => {
+    const [{ d }] = await query("select public.draw_winner($1,$2) as d", [controlled, gift]);
+    for (const mode of ['paused', 'waiting', 'countdown']) {
+      await assert.rejects(query("select public.set_screen_mode($1,$2,$3)", [controlled, mode, mode === 'countdown' ? 30 : null]), /завершите текущий/);
+    }
+    assert.equal((await query("select current_draw_id from public.event_screen_state where event_id=$1", [controlled]))[0].current_draw_id, d.id);
+    await query("select public.cancel_draw($1)", [d.id]);
+  });
+  await asRole("authenticated", admin, async () => query("select public.set_screen_mode($1,'waiting',null)", [controlled]));
+  assert.equal((await query("select count(*)::int as n from public.audit_logs where event_id=$1 and action='screen_mode_changed'", [controlled]))[0].n, 3);
+  const state = (await query("select * from public.event_screen_state where event_id=$1", [controlled]))[0];
+  assert.equal(state.mode, 'waiting');
+  assert.equal(state.current_draw_id, null);
+  assert.equal(state.current_prize_id, null);
+  assert.equal(state.countdown_end, null);
+  await query("update public.events set status='finished' where id=$1", [controlled]);
+  await asRole("authenticated", host, async () => {
+    await assert.rejects(query("select public.set_screen_mode($1,'paused',null)", [controlled]), /не активно/);
+    await assert.rejects(query("select public.set_screen_mode('00000000-0000-0000-0000-000000000099','paused',null)"), /не активно/);
+  });
+});
 await test("seed is valid and test guests cannot leak into the public counter", async () => {
   await db.exec(await readFile("supabase/seed.sql", "utf8"));
   const [{ s }] = await asRole("anon", null, async () =>

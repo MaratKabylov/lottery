@@ -130,6 +130,10 @@ export type Database = {
     };
     Views: { public_event_view: { Row: PublicEvent; Relationships: [] } };
     Functions: {
+      set_screen_mode: {
+        Args: { p_event_id: string; p_mode: "waiting" | "paused" | "countdown"; p_seconds: number | null };
+        Returns: ScreenState;
+      };
       draw_winner: {
         Args: { p_event_id: string; p_prize_id: string };
         Returns: Draw;

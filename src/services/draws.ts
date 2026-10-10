@@ -38,3 +38,16 @@ export async function getScreen(slug: string) {
   if (error) throw error;
   return data;
 }
+export async function setScreenMode(
+  eventId: string,
+  mode: "waiting" | "paused" | "countdown",
+  seconds: number | null = null,
+) {
+  const { data, error } = await supabase.rpc("set_screen_mode", {
+    p_event_id: eventId,
+    p_mode: mode,
+    p_seconds: seconds,
+  });
+  if (error) throw error;
+  return data;
+}

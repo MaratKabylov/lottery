@@ -1046,7 +1046,8 @@ code {
   margin: 25px auto;
   font-size: 12px;
 }
-.prize-select-label select {
+.prize-select-label select,
+.prize-select-label input {
   margin-top: 12px;
   padding: 15px;
 }

@@ -12,7 +12,7 @@ import {
 import { useEventData, useScreen } from "../../hooks/useEventData";
 import { useCountdown } from "../../hooks/useCountdown";
 import { useAction } from "../../hooks/useAction";
-import { drawWinner, finishDraw } from "../../services/draws";
+import { drawWinner, finishDraw, setScreenMode } from "../../services/draws";
 import { getStaffStats } from "../../services/events";
 import { formatTicket } from "../../utils/format";
 import { Brand } from "../../components/ui/Brand";
@@ -30,6 +30,7 @@ export default function HostPage() {
   const client = useQueryClient();
   const action = useAction();
   const [selected, setSelected] = useState("");
+  const [countdownSeconds, setCountdownSeconds] = useState(30);
   const remaining = useCountdown(
     screen.data?.state.countdown_end,
     screen.data?.server_time,
@@ -43,6 +44,7 @@ export default function HostPage() {
   const winner = screen.data?.winner;
   const online =
     data.connection === "online" &&
+    Boolean(screen.data) &&
     !screen.isError &&
     !data.draws.isError &&
     !data.prizes.isError;
@@ -179,6 +181,8 @@ export default function HostPage() {
                 !online ||
                 event.status !== "active" ||
                 !event.draw_enabled ||
+                screen.data?.state.mode === "paused" ||
+                (screen.data?.state.mode === "countdown" && remaining > 0) ||
                 data.draws.isPending
               }
               onClick={() =>
@@ -197,6 +201,42 @@ export default function HostPage() {
             )}
           </>
         )}
+      </section>
+      <section className="host-control" aria-label="Управление большим экраном">
+        <h2>Большой экран</h2>
+        <p className="muted">
+          {screen.data?.state.mode === "paused"
+            ? "Экран на паузе"
+            : screen.data?.state.mode === "countdown"
+              ? remaining > 0
+                ? `До розыгрыша: ${Math.ceil(remaining / 1000)} сек.`
+                : "Отсчёт завершён. Нажмите «Начать розыгрыш»."
+              : "Выберите режим экрана"}
+        </p>
+        <div className="button-row">
+          <button className="button secondary"
+            disabled={action.pending || !online || Boolean(pending) || data.draws.isPending || event.status !== "active"}
+            onClick={() => void action.run(() => setScreenMode(eventId, "waiting"), refresh)}>
+            Экран ожидания
+          </button>
+          <button className="button secondary"
+            disabled={action.pending || !online || Boolean(pending) || data.draws.isPending || event.status !== "active"}
+            onClick={() => void action.run(() => setScreenMode(eventId, "paused"), refresh)}>
+            Пауза
+          </button>
+        </div>
+        <label className="prize-select-label">
+          Обратный отсчёт, секунд
+          <input type="number" min={1} max={600} step={1} value={countdownSeconds}
+            onChange={(e) => setCountdownSeconds(Number(e.target.value))} />
+        </label>
+        <button className="button secondary"
+          disabled={action.pending || !online || Boolean(pending) || data.draws.isPending || event.status !== "active" ||
+            !Number.isInteger(countdownSeconds) || countdownSeconds < 1 || countdownSeconds > 600}
+          onClick={() => void action.run(() => setScreenMode(eventId, "countdown", countdownSeconds), refresh)}>
+          Запустить отсчёт
+        </button>
+        {pending && <p className="small muted">Завершите текущий розыгрыш, чтобы сменить режим экрана.</p>}
       </section>
       <p className="public-footer">Пусть этот момент запомнится.</p>
     </main>

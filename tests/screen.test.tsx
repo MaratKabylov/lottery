@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import ScreenPage from "../src/pages/public/ScreenPage";
 const mock = vi.hoisted(() => ({
   confetti: vi.fn(),
+  remaining: 0,
   snapshot: {
     event: {
       name: "Открытие",
@@ -28,7 +29,7 @@ const mock = vi.hoisted(() => ({
 vi.mock("../src/hooks/useEventData", () => ({
   useScreen: () => ({ data: mock.snapshot, connection: "online" }),
 }));
-vi.mock("../src/hooks/useCountdown", () => ({ useCountdown: () => 0 }));
+vi.mock("../src/hooks/useCountdown", () => ({ useCountdown: () => mock.remaining }));
 vi.mock("../src/services/events", () => ({ assetUrl: () => undefined }));
 vi.mock("canvas-confetti", () => ({ default: mock.confetti }));
 vi.mock("../src/components/ui/RegistrationQR", () => ({
@@ -73,4 +74,21 @@ it("screen renders a fresh database snapshot and celebrates the server-selected 
   );
   expect(screen.getByText("Ваш подарок ждёт вас!")).toBeTruthy();
   expect(mock.confetti).toHaveBeenCalledTimes(1);
+});
+it("pause and countdown hide stale winners and countdown waits for the host to start", () => {
+  mock.confetti.mockClear();
+  mock.snapshot = { ...mock.snapshot, state: { mode: "paused", current_draw_id: "stale-draw" } };
+  const view = render(<MemoryRouter><ScreenPage /></MemoryRouter>);
+  expect(screen.getByText("Небольшая пауза")).toBeTruthy();
+  expect(screen.queryByText("Дана")).toBeNull();
+  expect(mock.confetti).not.toHaveBeenCalled();
+  mock.snapshot = { ...mock.snapshot, state: { mode: "countdown", current_draw_id: null } };
+  mock.remaining = 2500;
+  view.rerender(<MemoryRouter><ScreenPage /></MemoryRouter>);
+  expect(screen.getByRole("timer").textContent).toBe("3");
+  expect(screen.queryByText("Дана")).toBeNull();
+  mock.remaining = 0;
+  view.rerender(<MemoryRouter><ScreenPage /></MemoryRouter>);
+  expect(screen.getByText("Ждём старта от ведущего")).toBeTruthy();
+  expect(mock.confetti).not.toHaveBeenCalled();
 });
