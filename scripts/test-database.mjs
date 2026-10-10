@@ -72,6 +72,16 @@ const register = async (phone, name = "Guest") =>
       )[0].result,
   );
 const first = await register("+77011234567");
+await test("new registrations are active by default and duplicate registration preserves a disabled status", async () => {
+  const [created] = await query("select is_active from public.participants where id=$1", [first.participant_id]);
+  assert.equal(created.is_active, true);
+  await query("update public.participants set is_active=false where id=$1", [first.participant_id]);
+  const duplicate = await register("+77011234567");
+  assert.equal(duplicate.participant_id, first.participant_id);
+  const [disabled] = await query("select is_active from public.participants where id=$1", [first.participant_id]);
+  assert.equal(disabled.is_active, false);
+  await query("update public.participants set is_active=true where id=$1", [first.participant_id]);
+});
 await test("duplicate phone returns the same ticket and participant", async () => {
   const again = await register("+77011234567");
   assert.equal(again.ticket_number, first.ticket_number);
