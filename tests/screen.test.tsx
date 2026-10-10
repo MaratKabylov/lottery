@@ -16,7 +16,7 @@ const mock = vi.hoisted(() => ({
       status: "active",
       registration_enabled: true,
     },
-    state: { mode: "waiting", current_draw_id: null as string | null },
+    state: { mode: "waiting", current_draw_id: null as string | null, rehearsal_mode: false },
     participant_count: 10,
     winner: null as null | {
       name: string;
@@ -35,6 +35,19 @@ vi.mock("canvas-confetti", () => ({ default: mock.confetti }));
 vi.mock("../src/components/ui/RegistrationQR", () => ({
   RegistrationQR: () => null,
 }));
+it("marks a rehearsal winner and explains that no real prize is awarded", () => {
+  const previous = mock.snapshot;
+  mock.snapshot = {
+    ...previous,
+    state: { mode: "winner", current_draw_id: "rehearsal-draw", rehearsal_mode: true },
+    winner: { name: "Тестовый гость", ticket_number: 1, status: "confirmed" },
+  };
+  render(<MemoryRouter><ScreenPage /></MemoryRouter>);
+  expect(screen.getByText("ТЕСТОВЫЙ РОЗЫГРЫШ · РЕПЕТИЦИЯ")).toBeTruthy();
+  expect(screen.getByText("Результат репетиции — приз не выдаётся")).toBeTruthy();
+  mock.snapshot = previous;
+  mock.confetti.mockClear();
+});
 it("screen renders a fresh database snapshot and celebrates the server-selected winner once", () => {
   const view = render(
     <MemoryRouter>
@@ -51,7 +64,7 @@ it("screen renders a fresh database snapshot and celebrates the server-selected 
   expect(screen.getByText("11")).toBeTruthy();
   mock.snapshot = {
     ...mock.snapshot,
-    state: { mode: "drawing", current_draw_id: "draw" },
+    state: { mode: "drawing", current_draw_id: "draw", rehearsal_mode: false },
     winner: { name: "Дана", ticket_number: 83, status: "pending" },
     prize: { name: "Бесплатный курс", image_path: null },
   };
@@ -77,12 +90,12 @@ it("screen renders a fresh database snapshot and celebrates the server-selected 
 });
 it("pause and countdown hide stale winners and countdown waits for the host to start", () => {
   mock.confetti.mockClear();
-  mock.snapshot = { ...mock.snapshot, state: { mode: "paused", current_draw_id: "stale-draw" } };
+  mock.snapshot = { ...mock.snapshot, state: { mode: "paused", current_draw_id: "stale-draw", rehearsal_mode: false } };
   const view = render(<MemoryRouter><ScreenPage /></MemoryRouter>);
   expect(screen.getByText("Небольшая пауза")).toBeTruthy();
   expect(screen.queryByText("Дана")).toBeNull();
   expect(mock.confetti).not.toHaveBeenCalled();
-  mock.snapshot = { ...mock.snapshot, state: { mode: "countdown", current_draw_id: null } };
+  mock.snapshot = { ...mock.snapshot, state: { mode: "countdown", current_draw_id: null, rehearsal_mode: false } };
   mock.remaining = 2500;
   view.rerender(<MemoryRouter><ScreenPage /></MemoryRouter>);
   expect(screen.getByRole("timer").textContent).toBe("3");

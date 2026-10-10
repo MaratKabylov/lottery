@@ -26,7 +26,7 @@ export default function DrawsPage() {
           }
           onClick={() =>
             downloadCSV(`${data.event.data!.slug}-draws.csv`, [
-              ["Время", "Приз", "№", "Имя", "Статус", "Кандидатов"],
+              ["Время", "Приз", "№", "Имя", "Статус", "Кандидатов", "Режим"],
               ...(data.draws.data || []).map((d) => {
                 const p = data.participants.data?.find(
                   (p) => p.id === d.participant_id,
@@ -39,6 +39,7 @@ export default function DrawsPage() {
                   p?.name || "",
                   d.status,
                   d.participants_count,
+                  d.is_test ? "Тестовый" : "Основной",
                 ];
               }),
             ])
@@ -82,6 +83,7 @@ export default function DrawsPage() {
                       </strong>
                     </td>
                     <td>
+                      {d.is_test && <span className="badge">Репетиция</span>}
                       <span className={`status ${d.status}`}>
                         {d.status === "confirmed"
                           ? "Подтверждён"

@@ -25,7 +25,7 @@ export default function ParticipantsPage() {
   if (!data.event.data) return <ErrorNotice error={data.event.error} />;
   const winners = new Set(
     data.draws.data
-      ?.filter((d) => d.status === "confirmed")
+      ?.filter((d) => d.status === "confirmed" && !d.is_test)
       .map((d) => d.participant_id),
   );
   const rows = (data.participants.data || [])

@@ -492,6 +492,78 @@ await test("screen commands are audited, protect pending draws and enforce pause
     await assert.rejects(query("select public.set_screen_mode('00000000-0000-0000-0000-000000000099','paused',null)"), /не активно/);
   });
 });
+await test("rehearsal mode rejects anon, non-staff and direct screen writes", async () => {
+  await asRole("anon", null, async () => {
+    await assert.rejects(query("select public.set_rehearsal_mode($1,true)", [event]), /permission denied/);
+  });
+  await asRole("authenticated", "00000000-0000-0000-0000-000000000099", async () => {
+    await assert.rejects(query("select public.set_rehearsal_mode($1,true)", [event]), /Доступ запрещён/);
+  });
+  await asRole("authenticated", host, async () => {
+    await assert.rejects(query("update public.event_screen_state set rehearsal_mode=true where event_id=$1", [event]), /permission denied/);
+    await assert.rejects(query("select public.set_rehearsal_mode($1,null)", [event]), /Укажите режим/);
+  });
+});
+
+await test("rehearsals isolate test guests, preserve inventory, reset the screen and leave production winners unchanged", async () => {
+  const [{ id: rehearsalEvent }] = await query("insert into public.events(name,slug,status,require_phone,check_in_required,draw_animation_seconds) values('Rehearsal','rehearsal','active',false,true,1) returning id");
+  const [{ id: rehearsalPrize }] = await query("insert into public.prizes(event_id,name,quantity) values($1,'Rehearsal prize',1) returning id", [rehearsalEvent]);
+  const [{ r: real }] = await asRole("service_role", null, async () => query("select public.register_participant('rehearsal','Real guest',null,null) as r"));
+  await asRole("authenticated", admin, async () => query("select public.manage_test_participants($1,10,false)", [rehearsalEvent]));
+  const [{ id: testGuest }] = await query("select id from public.participants where event_id=$1 and is_test order by ticket_number limit 1", [rehearsalEvent]);
+  await query("update public.participants set is_active=false where event_id=$1 and is_test and id<>$2", [rehearsalEvent, testGuest]);
+  await asRole("authenticated", host, async () => query("select public.staff_check_in($1,$2,true)", [rehearsalEvent, real.ticket_number]));
+  assert.equal((await query("select rehearsal_mode from public.event_screen_state where event_id=$1", [rehearsalEvent]))[0].rehearsal_mode, false);
+  await asRole("authenticated", host, async () => query("select public.set_rehearsal_mode($1,true)", [rehearsalEvent]));
+  const snapshot = (await asRole("anon", null, async () => query("select public.get_public_screen('rehearsal') as s")))[0].s;
+  assert.equal(snapshot.state.rehearsal_mode, true);
+  assert.equal(snapshot.participant_count, 10);
+  const draw = (await asRole("authenticated", host, async () => query("select public.draw_winner($1,$2) as d", [rehearsalEvent, rehearsalPrize])))[0].d;
+  assert.equal(draw.is_test, true);
+  assert.equal(draw.participant_id, testGuest);
+  assert.equal(draw.participants_count, 1);
+  const retried = (await asRole("authenticated", admin, async () => query("select public.draw_winner($1,$2) as d", [rehearsalEvent, rehearsalPrize])))[0].d;
+  assert.equal(retried.id, draw.id);
+  await asRole("authenticated", host, async () => {
+    await assert.rejects(query("select public.set_rehearsal_mode($1,false)", [rehearsalEvent]), /Сначала завершите/);
+    await assert.rejects(query("select public.confirm_draw($1)", [draw.id]), /Дождитесь/);
+  });
+  await query("update public.event_screen_state set countdown_end=clock_timestamp()-interval '1 second' where event_id=$1", [rehearsalEvent]);
+  await asRole("authenticated", host, async () => query("select public.confirm_draw($1)", [draw.id]));
+  // Normal repeat-win rules also apply within a rehearsal, independently of production.
+  await asRole("authenticated", host, async () => {
+    await assert.rejects(query("select public.draw_winner($1,$2)", [rehearsalEvent, rehearsalPrize]), /Нет подходящих/);
+  });
+  await query("update public.events set allow_multiple_wins=true where id=$1", [rehearsalEvent]);
+  const second = (await asRole("authenticated", host, async () => query("select public.draw_winner($1,$2) as d", [rehearsalEvent, rehearsalPrize])))[0].d;
+  await query("update public.event_screen_state set countdown_end=clock_timestamp()-interval '1 second' where event_id=$1", [rehearsalEvent]);
+  await asRole("authenticated", host, async () => query("select public.confirm_draw($1)", [second.id]));
+  // Two confirmed rehearsals may exceed prize quantity without reserving inventory.
+  await query("update public.prizes set quantity=1 where id=$1", [rehearsalPrize]);
+  const stats = (await asRole("authenticated", admin, async () => query("select awarded_count from public.prize_stats where id=$1", [rehearsalPrize])))[0];
+  assert.equal(Number(stats.awarded_count), 0);
+  assert.equal((await asRole("authenticated", admin, async () => query("select * from public.confirmed_winners where event_id=$1", [rehearsalEvent]))).length, 0);
+  const eventStats = (await asRole("authenticated", admin, async () => query("select * from public.event_stats where event_id=$1", [rehearsalEvent])))[0];
+  assert.equal(Number(eventStats.confirmed_winners_count), 0);
+  assert.equal(Number(eventStats.remaining_prizes_count), 1);
+  await query("update public.events set allow_multiple_wins=false where id=$1", [rehearsalEvent]);
+  await asRole("authenticated", host, async () => query("select public.set_rehearsal_mode($1,false)", [rehearsalEvent]));
+  const normal = (await asRole("anon", null, async () => query("select public.get_public_screen('rehearsal') as s")))[0].s;
+  assert.equal(normal.state.mode, "waiting");
+  assert.equal(normal.state.current_draw_id, null);
+  assert.equal(normal.winner, null);
+  assert.equal(normal.participant_count, 1);
+  const staffStats = (await asRole("authenticated", host, async () => query("select public.get_staff_stats($1) as s", [rehearsalEvent])))[0].s;
+  assert.equal(staffStats.confirmed_winners_count, 0);
+  assert.equal(staffStats.participants_count, 1);
+  const production = (await asRole("authenticated", host, async () => query("select public.draw_winner($1,$2) as d", [rehearsalEvent, rehearsalPrize])))[0].d;
+  assert.equal(production.is_test, false);
+  assert.equal(production.participant_id, real.participant_id);
+  await asRole("authenticated", host, async () => query("select public.cancel_draw($1)", [production.id]));
+  const audit = (await query("select count(*)::int as n from public.audit_logs where event_id=$1 and action='rehearsal_mode_changed'", [rehearsalEvent]))[0];
+  assert.equal(audit.n, 2);
+});
+
 await test("seed is valid and test guests cannot leak into the public counter", async () => {
   await db.exec(await readFile("supabase/seed.sql", "utf8"));
   const [{ s }] = await asRole("anon", null, async () =>

@@ -12,7 +12,7 @@ export default function EventDashboardPage() {
   const event = data.event.data;
   const participants = data.participants.data?.filter((p) => !p.is_test) || [];
   const confirmed =
-    data.draws.data?.filter((d) => d.status === "confirmed") || [];
+    data.draws.data?.filter((d) => d.status === "confirmed" && !d.is_test) || [];
   const remaining = (data.prizes.data || [])
     .filter((p) => p.is_active)
     .reduce(

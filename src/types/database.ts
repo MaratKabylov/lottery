@@ -59,6 +59,7 @@ export type Prize = {
   updated_at: string;
 };
 export type Draw = {
+  is_test: boolean;
   id: string;
   event_id: string;
   prize_id: string;
@@ -72,6 +73,7 @@ export type Draw = {
   created_at: string;
 };
 export type ScreenState = {
+  rehearsal_mode: boolean;
   event_id: string;
   mode: "waiting" | "countdown" | "drawing" | "winner" | "paused";
   current_prize_id: string | null;
@@ -130,6 +132,10 @@ export type Database = {
     };
     Views: { public_event_view: { Row: PublicEvent; Relationships: [] } };
     Functions: {
+      set_rehearsal_mode: {
+        Args: { p_event_id: string; p_enabled: boolean };
+        Returns: ScreenState;
+      };
       set_screen_mode: {
         Args: { p_event_id: string; p_mode: "waiting" | "paused" | "countdown"; p_seconds: number | null };
         Returns: ScreenState;

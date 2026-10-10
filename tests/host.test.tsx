@@ -9,6 +9,9 @@ const mock = vi.hoisted(() => ({
   finish: vi.fn(),
   mode: "waiting",
   setMode: vi.fn(),
+  setRehearsal: vi.fn(),
+  rehearsal: false,
+  awarded: false,
   connection: "online",
   pending: false,
   remaining: 0,
@@ -20,6 +23,7 @@ vi.mock("../src/services/draws", () => ({
   drawWinner: mock.draw,
   finishDraw: mock.finish,
   setScreenMode: mock.setMode,
+  setRehearsalMode: mock.setRehearsal,
 }));
 vi.mock("../src/services/events", () => ({
   getStaffStats: async () => ({
@@ -48,13 +52,13 @@ vi.mock("../src/hooks/useEventData", () => ({
     draws: {
       data: mock.pending
         ? [{ id: "draw", prize_id: "prize", status: "pending" }]
-        : [],
+        : mock.awarded ? [{ id: "award", prize_id: "prize", status: "confirmed", is_test: false }] : [],
     },
     connection: mock.connection,
   }),
   useScreen: () => ({
     data: {
-      state: { current_draw_id: "draw", mode: mock.mode },
+      state: { current_draw_id: "draw", mode: mock.mode, rehearsal_mode: mock.rehearsal },
       winner: { ticket_number: 57, name: "Дана" },
       prize: { name: "Бесплатный курс" },
     },
@@ -66,6 +70,9 @@ beforeEach(() => {
   mock.pending = false;
   mock.remaining = 0;
   mock.mode = "waiting";
+  mock.rehearsal = false;
+  mock.awarded = false;
+  mock.setRehearsal.mockResolvedValue({ rehearsal_mode: true });
   mock.draw.mockResolvedValue({ id: "draw" });
   mock.finish.mockResolvedValue({ id: "draw" });
 });
@@ -158,4 +165,27 @@ it("host waits for animation before exposing confirmation", () => {
   setup();
   expect(screen.getByText("2 сек.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Подтвердить" })).toBeNull();
+});
+
+it("switches rehearsal mode through the protected RPC", async () => {
+  const user = setup();
+  await user.click(screen.getByRole("checkbox", { name: "Тестовый розыгрыш" }));
+  expect(mock.setRehearsal).toHaveBeenCalledWith("event", true);
+});
+
+it.each(["offline", "pending"])("prevents mode changes when %s", (condition) => {
+  mock.pending = condition === "pending";
+  mock.connection = condition === "offline" ? "offline" : "online";
+  setup();
+  expect(screen.getByRole("checkbox", { name: "Тестовый розыгрыш" }).hasAttribute("disabled")).toBe(true);
+});
+
+it("allows rehearsing an exhausted prize and clearly labels the test draw", async () => {
+  mock.rehearsal = true;
+  mock.awarded = true;
+  const user = setup();
+  expect(screen.getByText(/Призы не расходуются/)).toBeTruthy();
+  await user.selectOptions(screen.getByRole("combobox"), "prize");
+  await user.click(screen.getByRole("button", { name: "Начать тестовый розыгрыш" }));
+  expect(mock.draw).toHaveBeenCalledWith("event", "prize");
 });

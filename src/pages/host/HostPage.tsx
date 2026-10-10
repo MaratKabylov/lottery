@@ -12,7 +12,7 @@ import {
 import { useEventData, useScreen } from "../../hooks/useEventData";
 import { useCountdown } from "../../hooks/useCountdown";
 import { useAction } from "../../hooks/useAction";
-import { drawWinner, finishDraw, setScreenMode } from "../../services/draws";
+import { drawWinner, finishDraw, setScreenMode, setRehearsalMode } from "../../services/draws";
 import { getStaffStats } from "../../services/events";
 import { formatTicket } from "../../utils/format";
 import { Brand } from "../../components/ui/Brand";
@@ -42,6 +42,7 @@ export default function HostPage() {
   const pending = data.draws.data?.find((d) => d.status === "pending");
   const prizeId = pending?.prize_id || selected;
   const winner = screen.data?.winner;
+  const rehearsal = Boolean(screen.data?.state.rehearsal_mode);
   const online =
     data.connection === "online" &&
     Boolean(screen.data) &&
@@ -51,10 +52,10 @@ export default function HostPage() {
   const eligiblePrizes = (data.prizes.data || []).filter(
     (p) =>
       p.is_active &&
-      p.quantity >
+      (rehearsal || p.quantity >
         (data.draws.data || []).filter(
-          (d) => d.prize_id === p.id && d.status === "confirmed",
-        ).length,
+          (d) => d.prize_id === p.id && d.status === "confirmed" && !d.is_test,
+        ).length),
   );
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["event", eventId] });
@@ -93,6 +94,20 @@ export default function HostPage() {
           победителей
         </span>
       </div>
+      <section className="host-control" aria-label="Режим розыгрыша">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={rehearsal}
+            disabled={action.pending || !online || Boolean(pending) || data.draws.isPending || event.status !== "active"}
+            onChange={(e) => void action.run(() => setRehearsalMode(eventId, e.target.checked), refresh)} />
+          Тестовый розыгрыш
+        </label>
+        <p className="small muted">
+          {rehearsal
+            ? "Репетиция: участвуют только активные тестовые гости без отметки присутствия. Призы не расходуются."
+            : "Основной розыгрыш: участвуют реальные гости. Тестовые участники исключены."}
+        </p>
+        {pending && <p className="small muted">Завершите текущий розыгрыш, чтобы переключить режим.</p>}
+      </section>
       <ErrorNotice
         error={
           action.error ||
@@ -163,11 +178,10 @@ export default function HostPage() {
                 <option value="">Выберите подарок</option>
                 {eligiblePrizes.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} · осталось{" "}
-                    {p.quantity -
+                    {p.name} · {rehearsal ? "репетиция" : `осталось ${p.quantity -
                       (data.draws.data || []).filter(
-                        (d) => d.prize_id === p.id && d.status === "confirmed",
-                      ).length}
+                        (d) => d.prize_id === p.id && d.status === "confirmed" && !d.is_test,
+                      ).length}`}
                   </option>
                 ))}
               </select>
@@ -190,7 +204,7 @@ export default function HostPage() {
               }
             >
               <Play size={20} />
-              {action.pending ? "Запускаем…" : "Начать розыгрыш"}
+              {action.pending ? "Запускаем…" : rehearsal ? "Начать тестовый розыгрыш" : "Начать розыгрыш"}
             </button>
             <p className="small muted">
               Победителя выбирает сервер. Результат сохраняется до начала

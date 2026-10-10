@@ -145,7 +145,7 @@ export default function PrizesPage() {
           {data.prizes.data?.map((p, i) => {
             const awarded =
               data.draws.data?.filter(
-                (d) => d.prize_id === p.id && d.status === "confirmed",
+                (d) => d.prize_id === p.id && d.status === "confirmed" && !d.is_test,
               ).length || 0;
             return (
               <article

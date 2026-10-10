@@ -31,6 +31,14 @@ export async function finishDraw(id: string, confirm: boolean) {
   if (error) throw error;
   return data;
 }
+export async function setRehearsalMode(eventId: string, enabled: boolean) {
+  const { data, error } = await supabase.rpc("set_rehearsal_mode", {
+    p_event_id: eventId,
+    p_enabled: enabled,
+  });
+  if (error) throw error;
+  return data;
+}
 export async function getScreen(slug: string) {
   const { data, error } = await supabase.rpc("get_public_screen", {
     p_slug: slug,

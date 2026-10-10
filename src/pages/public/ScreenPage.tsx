@@ -114,6 +114,7 @@ export default function ScreenPage() {
           <span className="screen-brand">✳ EventDraw.</span>
         )}
         <Connection status={screen.connection} />
+        {screen.data.state.rehearsal_mode && <span className="badge">ТЕСТОВЫЙ РОЗЫГРЫШ · РЕПЕТИЦИЯ</span>}
       </header>
       <section className="screen-content">
         <span className="eyebrow">{event.name}</span>
@@ -164,7 +165,7 @@ export default function ScreenPage() {
               />
             )}
             <p className="winner-hint">
-              {screen.data.winner?.status === "confirmed"
+              {state.rehearsal_mode ? "Результат репетиции — приз не выдаётся" : screen.data.winner?.status === "confirmed"
                 ? "Ваш подарок ждёт вас!"
                 : "Подойдите к ведущему"}
             </p>
@@ -181,8 +182,8 @@ export default function ScreenPage() {
               <br />
               <em>может стать вашим.</em>
             </h1>
-            <p>Присоединяйтесь к розыгрышу подарков</p>
-            {event.status === "active" && event.registration_enabled && (
+            <p>{state.rehearsal_mode ? "Репетиция с тестовыми участниками" : "Присоединяйтесь к розыгрышу подарков"}</p>
+            {!state.rehearsal_mode && event.status === "active" && event.registration_enabled && (
               <RegistrationQR slug={event.slug} />
             )}
             <div className="participant-counter">
