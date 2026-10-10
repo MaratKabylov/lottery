@@ -1,0 +1,220 @@
+# EventDraw
+
+Регистрация гостей и публичные розыгрыши призов. Реализация следует [Architecture.md](Architecture.md): React / Vite / TypeScript strict / Tailwind / React Router / TanStack Query; единственный backend — Supabase. Отдельного API-сервера нет.
+
+## Что реализовано
+
+- Вход через Supabase Auth, роли `admin` и `host` из `profiles`, ограничения маршрутов и серверные проверки прав.
+- Создание мероприятий, список, настройки, активация, завершение и архивирование.
+- Регистрация через Edge Function, нормализация казахстанского телефона, повторная выдача прежнего билета, транзакционный счётчик билетов.
+- QR регистрации, скачивание PNG, мобильная форма, экран с номером.
+- Список участников, поиск, фильтры, активация / деактивация, check-in / отмена по номеру, тестовые участники 10 / 50 / 100 / 500.
+- Создание и изменение призов, количество, порядок, отключение, загрузка изображений и логотипа в Storage.
+- Серверный выбор победителя, подтверждение и отмена, контроль остатков, блокировка мероприятия, один незавершённый розыгрыш на мероприятие.
+- Панель ведущего, большой экран без авторизации, Realtime и восстановление состояния из БД, анимация по серверному времени, конфетти, звук после действия пользователя, Fullscreen API.
+- История розыгрышей, CSV текущей выборки участников и истории, транзакционный аудит, RLS.
+
+Это первая реализация MVP. Полный сценарий на настоящем Supabase ещё не проверен: в среде реализации отсутствуют Docker/Podman и подключённый браузер. Сборка, автоматические тесты интерфейса, Deno type-check Edge Function и проверки PostgreSQL прошли. Не считайте проверки с подменёнными сервисами заменой реального запуска мероприятия.
+
+## Локальный запуск
+
+Нужны Node.js **22.12+** (рекомендуется 24) и Docker Desktop с Linux containers либо Podman. Supabase CLI установлен как devDependency. Версии зафиксированы в `package-lock.json`; `npm ci` воспроизводит установку. `.npmrc` размещает npm cache внутри проекта для ограниченных рабочих сред.
+
+```powershell
+npm ci
+npm run supabase -- start
+npm run supabase -- db reset
+npm run supabase -- status
+Copy-Item .env.example .env
+```
+
+В `.env` укажите URL и anon / publishable key из `supabase status`:
+
+```dotenv
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_PUBLISHABLE_KEY=<public-key>
+```
+
+Секретные ключи, пароль БД и service-role key **никогда не должны иметь префикс `VITE_`**. Файлы `.env` игнорируются Git. Без настроек приложение показывает инструкцию подключения, без фиктивных данных и локального выбора победителя.
+
+Запустите Edge Function в отдельном терминале:
+
+```powershell
+npm run supabase -- functions serve register-participant
+```
+
+И frontend:
+
+```powershell
+npm run dev
+```
+
+Откройте `http://127.0.0.1:5173`. Для локального теста QR с телефона потребуется доступный телефону адрес, запуск Vite с `--host 0.0.0.0`, доступный адрес Supabase вместо loopback и соответствующее значение `ALLOWED_ORIGINS`. В production QR автоматически использует origin опубликованного frontend.
+
+Vite использует `--configLoader native`: конфигурацию читает Node, что также обходит ограничения чтения родительских каталогов при сборке в Windows sandbox. Здесь запуск dev-сервера потребовал выхода из sandbox для esbuild; в обычном терминале это ограничение отсутствует.
+
+`supabase init` повторно выполнять не нужно: `supabase/config.toml` уже создан. `db reset` **сбрасывает локальную базу**, применяет все миграции и `seed.sql`. Для применения новых миграций без reset:
+
+```powershell
+npm run supabase -- migration up
+```
+
+## Первый администратор и ведущий
+
+Самостоятельная регистрация сотрудников отключена в локальном `config.toml`. В hosted Supabase также отключите public signup в Auth settings.
+
+1. Откройте локальный Studio `http://127.0.0.1:54323` или Dashboard вашего проекта.
+2. В Auth → Users создайте пользователя с email и паролем, подтвердите email.
+3. Выполните в SQL Editor, подставив UUID созданного пользователя:
+
+```sql
+insert into public.profiles(id, role, display_name)
+values ('<auth-user-uuid>', 'admin', 'Организатор');
+```
+
+Для ведущего создайте другого пользователя и профиль с ролью `host`. Роли не берутся из пользовательских метаданных и не могут быть повышены ведущим. Пользователь без профиля не получает доступа к рабочему пространству. Управление профилями пока выполняется через доверенный SQL Editor, отдельного UI сотрудников нет.
+
+## База данных и миграции
+
+| Миграция | Содержание |
+| --- | --- |
+| `202610100001_schema.sql` | Таблицы, индексы, ограничения, timestamp / audit / event initialization / locking triggers |
+| `202610100002_security.sql` | RLS, явные grants, безопасные представления, Storage bucket и policies, Realtime publication |
+| `202610100003_functions.sql` | Регистрация, draw engine, check-in, public screen RPC, rate limit |
+| `202610100004_staff_stats.sql` | Агрегированные счётчики для ведущего без доступа к контактам |
+| `202610100005_test_participants.sql` | Защищённое создание / удаление тестовых участников |
+
+Таблицы: `profiles`, `events`, `participants`, `event_ticket_counters`, `prizes`, `draws`, `event_screen_state`, `audit_logs`, `registration_rate_limits`. На каждой включён RLS.
+
+Представления: `public_event_view`, `event_stats`, `prize_stats`, `confirmed_winners`. Публичное представление намеренно выполняется с правами владельца, но содержит только разрешённые колонки активных / завершённых мероприятий и явный фильтр; административные views используют `security_invoker` и RLS.
+
+RPC:
+
+| Функция | Кто вызывает |
+| --- | --- |
+| `register_participant` | Только service-role клиент Edge Function |
+| `consume_registration_limit` | Только service-role клиент Edge Function |
+| `draw_winner`, `confirm_draw`, `cancel_draw` | Авторизованный `admin` / `host` |
+| `staff_check_in` | Авторизованный `admin` / `host`, возвращает данные без phone/email |
+| `get_staff_stats` | Авторизованный `admin` / `host` |
+| `get_public_screen` | Публично, только безопасная проекция |
+| `manage_test_participants` | Только `admin` |
+
+Все `SECURITY DEFINER` функции задают пустой `search_path`, используют квалифицированные имена и ограниченные `EXECUTE`. Сотруднические RPC дополнительно проверяют `auth.uid()` и роль.
+
+RLS / grants:
+
+- `anon`: только `public_event_view`, разрешённые строки `event_screen_state` и безопасный public screen RPC; нет доступа к контактам, прямой регистрации и таблице draws.
+- `host`: чтение мероприятий / призов / истории, собственный профиль, draw и check-in RPC; без изменения настроек, призов, профилей и чтения контактов / аудита.
+- `admin`: управление мероприятиями, призами и профилями, чтение контактов / аудита; изменение только разрешённых полей участника. Прямое изменение draws запрещено даже администратору — только RPC.
+- Таблицы счётчиков и rate limit закрыты от клиента. Сервисный ключ использует только Edge runtime.
+
+Seed создаёт активное мероприятие `opening-2026`, пять видов призов и десять участников `is_test=true`. Они не участвуют в розыгрышах и публичном счётчике. Первый реальный билет seed-мероприятия — №011; в новом пустом мероприятии — №001. Удаление тестовых гостей не переиспользует номера.
+
+## Архитектурные решения
+
+- В ТЗ `draw_enabled` упомянут в алгоритме, но отсутствует в исходном перечне полей; поле добавлено в `events`.
+- Билет выделяется увеличением отдельного счётчика внутри транзакции с блокировкой мероприятия. Телефон нормализуется в Edge Function и проверяется повторно SQL-функцией. Partial unique index гарантирует отсутствие дублей телефона; `NULL` допустим при необязательном телефоне.
+- `draw_winner` блокирует мероприятие, получает снимок допустимых участников и выбирает одного через PostgreSQL `random()`. Frontend не выбирает победителя, в том числе offline. Единственный pending draw защищён partial unique index; повторный запрос того же приза возвращает тот же draw.
+- Подтверждение возможно после серверного срока анимации. Подтверждение / отмена повторного запроса идемпотентны; противоположное решение завершённого draw отклоняется. Отмена не расходует приз и не исключает гостя. Подтверждённые победы исключают гостя при `allow_multiple_wins=false`.
+- Realtime публикует **только `event_screen_state`**: без телефонов, email и имён. Триггеры регистрации и изменений обновляют `updated_at`, поэтому один канал обновляет экран и админские данные. Public RPC возвращает только счётчик, текущий приз и разрешённые настройки имени / номера.
+- `countdown_end` хранится в БД. После загрузки экран рассчитывает остаток с поправкой на часы сервера; по истечении срока отображает сохранённого победителя, даже если `mode` остаётся `drawing` до подтверждения. Это позволяет обойтись без браузерной записи состояния или фонового таймера на сервере.
+- Повторная подписка и polling раз в 15 секунд восстанавливают данные после пропуска Realtime. Ведущий не может запускать розыгрыш при отсутствии соединения или ошибке загрузки. Browser receipt в sessionStorage служит только отображению ранее выданного билета; не участвует в доступе или выборе победителя.
+- Check-in реализован защищённой RPC по номеру, как разрешено §42; отдельной `check-in` Edge Function нет. URL check-in доступен только сотрудникам.
+- Призы отключаются, а участники деактивируются; история и ссылки на победителя сохраняются. Для тестовых участников предусмотрено явное удаление без переиспользования номеров.
+- RPC, которые возвращают один результат, используют `jsonb` с явной формой ответа; это исключает неоднозначность массива / объекта при сериализации composite типов через PostgREST.
+- CSV экспортирует текущую фильтрованную выборку / историю, экранирует кавычки и потенциальные spreadsheet formulas. Публичные формы не экспортируют контакты.
+
+## Edge Function и secrets
+
+`supabase/functions/register-participant/index.ts` проверяет JSON через Zod, нормализует телефон, применяет DB rate limit, при настройке проверяет Turnstile и вызывает закрытую RPC. Бизнес-проверки активного мероприятия, обязательных полей и дубля повторяются атомарно в PostgreSQL.
+
+| ENV | Где | Назначение |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | Frontend `.env` | URL проекта |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Frontend `.env` | Public key либо локальный legacy anon key |
+| `SUPABASE_URL` | Edge runtime | Внедряется Supabase |
+| `SB_SECRET_KEY` | Supabase Secrets | Новый secret key, если legacy service-role недоступен |
+| `SUPABASE_SERVICE_ROLE_KEY` | Edge runtime | Legacy service-role fallback; локально внедряется CLI |
+| `ALLOWED_ORIGINS` | Supabase Secrets | Origin frontend, несколько через запятую |
+| `TURNSTILE_SECRET_KEY` | Supabase Secrets | Опциональная серверная anti-bot проверка |
+| `EVENTDRAW_TEST_DATABASE_URL` | Только локальный тест | Адрес локальной БД для concurrency test |
+
+Для локальных Edge secrets можно использовать игнорируемый `.env.functions` и передать `--env-file .env.functions` в `functions serve`. Не добавляйте этот файл в Git.
+
+`verify_jwt=false` нужен публичной функции, включая запросы с publishable key. Регистрация не требует пользовательского JWT; доступ к service RPC закрыт grants. CORS ограничивает браузерные origin, но не заменяет антибот-защиту. Rate limit хранит SHA-256 ключ с серверным секретом, а не исходный IP: до 10 запросов в минуту на IP / мероприятие. Убедитесь, что ingress перезаписывает `x-forwarded-for`; без доверенного IP / с общим NAT возможны обход либо общие ограничения. Старые hashed ключи очищаются через сутки при следующих запросах.
+
+Для Turnstile подготовлена серверная часть. **Не включайте секрет до добавления виджета во frontend и передачи токена**. Полная интеграция виджета остаётся отдельной задачей.
+
+## Production deployment
+
+Создайте Supabase project, отключите public signup, настройте URL frontend в Auth. Затем:
+
+```powershell
+npm run supabase -- login
+npm run supabase -- link --project-ref <project-ref>
+npm run supabase -- db push
+npm run supabase -- secrets set ALLOWED_ORIGINS=https://your-domain.example
+npm run supabase -- functions deploy register-participant
+```
+
+При необходимости добавьте `SB_SECRET_KEY` через Supabase Secrets Dashboard; не передавайте секрет через общедоступные файлы / логи. Миграции сами создают bucket `event-assets`, настраивают policies и добавляют screen state в Realtime publication.
+
+Production seed автоматически не создавайте: добавьте мероприятие и призы через UI. `seed.sql` предназначен для разработки.
+
+Соберите frontend с production `VITE_` настройками:
+
+```powershell
+npm run build
+```
+
+Разместите `dist/` на static hosting. Настройте SPA fallback всех frontend routes на `index.html`. Supabase остаётся единственным backend. Bucket `event-assets` публичный и принимает PNG/JPEG/WebP до 5 МБ — загружайте туда только изображения для публичного показа.
+
+## Проверки
+
+```powershell
+npm run build
+npm test
+npm run test:db
+```
+
+- Frontend tests: регистрация, дубль, серверная ошибка, закрытая регистрация, запуск host через RPC, offline, confirm/cancel, ожидание анимации, Realtime invalidation/reconnect, обновление screen snapshot, конфетти один раз, нормализация телефона и поправка на часы.
+- DB tests запускают настоящий PostgreSQL engine через PGlite / WASM с подменёнными платформенными схемами `auth` / `storage`: применяют реальные миграции и seed, проверяют grants / RLS под `anon` / `authenticated`, билеты, дубли, eligibility, cancelled / confirmed, остатки, audit, rate limit и тестовых участников.
+- PGlite не воспроизводит несколько независимых PostgreSQL connections, Supabase Auth, Storage API или сетевой Realtime. Для реальной конкуренции **после запуска локального Supabase**:
+
+```powershell
+npm run test:concurrency
+```
+
+Скрипт разрешает только loopback database URL, создаёт собственные тестовые event / user и удаляет их в `finally`. Проверяет 20 одновременных регистраций, 20 дублей одного телефона и два одновременных запуска ведущих. Здесь он подготовлен, но не выполнен: Docker отсутствует.
+
+Type-check Edge Function (если установлен Deno):
+
+```powershell
+deno check supabase/functions/register-participant/index.ts
+```
+
+## Ручной полный сценарий
+
+1. Войдите как admin, создайте **новое пустое** мероприятие, в настройках выберите «Активно».
+2. Добавьте приз, откройте QR и большой экран в другом окне.
+3. Зарегистрируйте реального гостя: должен появиться №001. Повторите с вариантом того же телефона: получите №001 снова.
+4. Убедитесь, что счётчик на большом экране изменился. При обязательном check-in отметьте присутствие сотрудником.
+5. Войдите ведущим, выберите приз и запустите розыгрыш. Экран покажет анимацию и сохранённого сервером победителя.
+6. Подтвердите: история станет confirmed, остаток уменьшится. При запрете повторного выигрыша гость больше не должен участвовать.
+7. Добавьте второго реального гостя. Проверьте отмену отсутствующего победителя и повторный розыгрыш без расходования отменённого приза.
+8. Перезагрузите / отключите сеть / восстановите связь в окне экрана и ведущего; данные должны восстановиться из БД, offline запуск должен быть запрещён.
+9. Проверьте телефон, планшет и desktop, звук после нажатия, fullscreen, QR PNG и CSV.
+
+## Что осталось
+
+- Поднять Supabase и проверить настоящий end-to-end сценарий, Edge HTTP / rate limit, Storage, Auth, Realtime и `test:concurrency`.
+- Визуальная проверка iPhone / Android / iPad / desktop в браузере.
+- XLSX экспорт и импорт CSV/XLSX через отдельную защищённую серверную функцию (импорт предусмотрен после MVP).
+- Персональные случайные QR-токены и check-in по телефону, если нужны вместо текущего check-in по номеру.
+- Turnstile frontend widget и эксплуатационная настройка доверенного ingress / IP throttling.
+- UI управления сотрудниками и дополнительная настройка pause / countdown режима экрана при необходимости.
+
+SMS, мессенджеры, платежи, сложная аналитика, мобильное приложение и multi-tenant SaaS не включены согласно ТЗ.
+
+Официальные справочники: [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [Supabase API keys](https://supabase.com/docs/guides/getting-started/api-keys), [Edge Function auth](https://supabase.com/docs/guides/functions/auth), [Vite](https://vite.dev/guide/), [Tailwind Vite integration](https://tailwindcss.com/docs/installation/using-vite).
