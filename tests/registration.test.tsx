@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import RegistrationPage from "../src/pages/public/RegistrationPage";
 import Success from "../src/pages/public/RegistrationSuccessPage";
-const mocks = vi.hoisted(() => ({ register: vi.fn(), getEvent: vi.fn() }));
+import type { TurnstileOptions } from "../src/lib/turnstile";
+const mocks = vi.hoisted(() => ({ register: vi.fn(), getEvent: vi.fn(), load: vi.fn(), render: vi.fn(), remove: vi.fn() }));
+vi.mock("../src/lib/turnstile", () => ({ loadTurnstile: mocks.load }));
 vi.mock("../src/services/participants", () => ({
   registerParticipant: mocks.register,
 }));
@@ -26,6 +28,9 @@ const event = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "");
+  mocks.load.mockResolvedValue({ render: mocks.render, remove: mocks.remove });
+  mocks.render.mockReturnValue("widget");
   mocks.getEvent.mockResolvedValue(event);
 });
 function setup() {
@@ -109,5 +114,61 @@ describe("public registration", () => {
     setup();
     expect(await screen.findByText("Регистрация закрыта")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Получить номер/ })).toBeNull();
+  });
+  it("requires verification, clears expired tokens, and sends the fresh token to Edge", async () => {
+    vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "public-site-key");
+    mocks.register.mockResolvedValue({ success: true, ticket_number: 1, participant_id: "p", already_registered: false });
+    const user = setup();
+    await fill(user);
+    const button = screen.getByRole("button", { name: /Получить номер/ });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    await user.click(button);
+    expect(mocks.register).not.toHaveBeenCalled();
+    const options = mocks.render.mock.calls[0][1] as TurnstileOptions;
+    act(() => options.callback("expired-token"));
+    expect(button.hasAttribute("disabled")).toBe(false);
+    act(() => options["expired-callback"]());
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Срок проверки истёк. Пройдите её ещё раз.");
+    act(() => options.callback("fresh-token"));
+    await user.click(button);
+    expect(await screen.findByText("№001")).toBeTruthy();
+    expect(mocks.register).toHaveBeenCalledWith(expect.objectContaining({ turnstile_token: "fresh-token" }));
+    expect(mocks.remove).toHaveBeenCalledWith("widget");
+  });
+  it("obtains a new token after a failed registration without losing form fields", async () => {
+    vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "public-site-key");
+    mocks.register.mockRejectedValueOnce(new Error("Попробуйте позже"));
+    const user = setup();
+    await fill(user);
+    const options = mocks.render.mock.calls[0][1] as TurnstileOptions;
+    act(() => options.callback("used-token"));
+    await user.click(screen.getByRole("button", { name: /Получить номер/ }));
+    expect(await screen.findByText("Попробуйте позже")).toBeTruthy();
+    await waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText("Ваше имя")).toHaveProperty("value", "Дана");
+    expect(screen.getByRole("button", { name: /Получить номер/ }).hasAttribute("disabled")).toBe(true);
+    // A callback from the removed widget cannot restore its consumed token.
+    act(() => options.callback("used-token"));
+    expect(screen.getByRole("button", { name: /Получить номер/ }).hasAttribute("disabled")).toBe(true);
+    const retryOptions = mocks.render.mock.calls[1][1] as TurnstileOptions;
+    act(() => retryOptions.callback("retry-token"));
+    mocks.register.mockResolvedValue({ success: true, ticket_number: 2, participant_id: "p", already_registered: false });
+    await user.click(screen.getByRole("button", { name: /Получить номер/ }));
+    expect(await screen.findByText("№002")).toBeTruthy();
+    expect(mocks.register).toHaveBeenLastCalledWith(expect.objectContaining({ turnstile_token: "retry-token" }));
+  });
+  it("allows retry when the verification script fails to load", async () => {
+    vi.stubEnv("VITE_TURNSTILE_SITE_KEY", "public-site-key");
+    mocks.load.mockRejectedValueOnce(new Error("Network error"));
+    const user = setup();
+    await fill(user);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Не удалось загрузить проверку. Попробуйте ещё раз.");
+    expect(screen.getByRole("button", { name: /Получить номер/ }).hasAttribute("disabled")).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Повторить проверку" }));
+    await waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(1));
+    act(() => (mocks.render.mock.calls[0][1] as TurnstileOptions)["error-callback"]());
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Не удалось пройти проверку. Попробуйте ещё раз.");
+    expect(mocks.register).not.toHaveBeenCalled();
   });
 });

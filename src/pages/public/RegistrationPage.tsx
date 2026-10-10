@@ -1,16 +1,20 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { getPublicEvent, assetUrl } from "../../services/events";
 import { registerParticipant } from "../../services/participants";
 import { Brand } from "../../components/ui/Brand";
 import { ErrorNotice, Loading } from "../../components/ui/Feedback";
 import { useAction } from "../../hooks/useAction";
+import { Turnstile } from "../../components/ui/Turnstile";
 export default function RegistrationPage() {
   const { eventSlug = "" } = useParams();
   const navigate = useNavigate();
   const action = useAction();
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
+  const [token, setToken] = useState<string | null>(null);
+  const [verificationAttempt, setVerificationAttempt] = useState(0);
   const query = useQuery({
     queryKey: ["public-event", eventSlug],
     queryFn: () => getPublicEvent(eventSlug),
@@ -20,15 +24,25 @@ export default function RegistrationPage() {
   const event = query.data;
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (action.pending || (siteKey && !token)) return;
     const form = new FormData(e.currentTarget);
     void action.run(
-      () =>
-        registerParticipant({
-          event_slug: eventSlug,
-          name: String(form.get("name")).trim(),
-          phone: String(form.get("phone")).trim(),
-          email: String(form.get("email")).trim(),
-        }),
+      async () => {
+        try {
+          return await registerParticipant({
+            event_slug: eventSlug,
+            name: String(form.get("name")).trim(),
+            phone: String(form.get("phone")).trim(),
+            email: String(form.get("email")).trim(),
+            ...(siteKey && token ? { turnstile_token: token } : {}),
+          });
+        } catch (error) {
+          // Siteverify tokens are single-use, including failed registrations.
+          setToken(null);
+          setVerificationAttempt((value) => value + 1);
+          throw error;
+        }
+      },
       (result) => {
         try {
           sessionStorage.setItem(
@@ -99,7 +113,10 @@ export default function RegistrationPage() {
               />
             </label>
             <ErrorNotice error={action.error} />
-            <button className="button" disabled={action.pending}>
+            {siteKey && (
+              <Turnstile key={`${eventSlug}:${verificationAttempt}`} siteKey={siteKey} onToken={setToken} />
+            )}
+            <button className="button" disabled={action.pending || Boolean(siteKey && !token)}>
               {action.pending ? "Получаем ваш номер…" : "Получить номер"}{" "}
               <ArrowRight size={18} />
             </button>

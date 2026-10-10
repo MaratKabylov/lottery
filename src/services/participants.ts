@@ -23,6 +23,7 @@ export async function registerParticipant(input: {
   name: string;
   phone: string;
   email: string;
+  turnstile_token?: string;
 }) {
   const { data, error } = await supabase.functions.invoke<RegistrationResult>(
     "register-participant",
