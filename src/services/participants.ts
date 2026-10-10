@@ -60,6 +60,19 @@ export async function checkIn(
   if (error) throw error;
   return data;
 }
+export async function checkInByPhone(
+  eventId: string,
+  phone: string,
+  checkedIn = true,
+) {
+  const { data, error } = await supabase.rpc("staff_check_in_by_phone", {
+    p_event_id: eventId,
+    p_phone: phone,
+    p_checked_in: checkedIn,
+  });
+  if (error) throw error;
+  return data;
+}
 export async function manageTestParticipants(
   eventId: string,
   count: number,

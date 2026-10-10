@@ -388,6 +388,53 @@ await test("prize quantity cannot drop below confirmed plus reserved inventory",
     query("select public.cancel_draw($1)", [pending.id]),
   );
 });
+await test("phone check-in normalizes Kazakhstan numbers and hides contact data", async () => {
+  await asRole("authenticated", host, async () => {
+    for (const phone of ["87011234568", "77011234568", "+77011234568", "8 (701) 123-45-68"]) {
+      const [{ p }] = await query("select public.staff_check_in_by_phone($1,$2,true) as p", [event, phone]);
+      assert.equal(p.id, second.participant_id);
+      assert.equal(p.checked_in, true);
+      assert.equal(p.phone, null);
+      assert.equal(p.email, null);
+    }
+  });
+});
+await test("check-in retries preserve timestamps and audit count; cancellation clears the timestamp", async () => {
+  const before = (await query("select checked_in_at,updated_at from public.participants where id=$1", [second.participant_id]))[0];
+  const audits = (await query("select count(*)::int as n from public.audit_logs"))[0].n;
+  await asRole("authenticated", admin, async () => {
+    await query("select public.staff_check_in($1,$2,true)", [event, second.ticket_number]);
+    await query("select public.staff_check_in_by_phone($1,$2,true)", [event, "+77011234568"]);
+  });
+  assert.deepEqual((await query("select checked_in_at,updated_at from public.participants where id=$1", [second.participant_id]))[0], before);
+  assert.equal((await query("select count(*)::int as n from public.audit_logs"))[0].n, audits);
+  await asRole("authenticated", host, async () => {
+    const [{ p }] = await query("select public.staff_check_in_by_phone($1,$2,false) as p", [event, "87011234568"]);
+    assert.equal(p.checked_in, false);
+    assert.equal(p.checked_in_at, null);
+  });
+  assert.equal((await query("select count(*)::int as n from public.audit_logs where action='check_in' and entity_id=$1 and user_id=$2", [second.participant_id, host]))[0].n, 2);
+});
+await test("check-in rejects anonymous users and authenticated users without a staff profile", async () => {
+  for (const [role, user, message] of [["anon", null, /permission denied/], ["authenticated", null, /Доступ запрещён/], ["authenticated", "00000000-0000-0000-0000-000000000099", /Доступ запрещён/]]) {
+    await asRole(role, user, async () => {
+      await assert.rejects(query("select public.staff_check_in($1,$2,true)", [event, second.ticket_number]), message);
+      await assert.rejects(query("select public.staff_check_in_by_phone($1,$2,true)", [event, "+77011234568"]), message);
+    });
+  }
+});
+await test("check-in validates input and scopes phone lookup to its event", async () => {
+  const [{ id: other }] = await query("insert into public.events(name,slug) values ('Check-in other','check-in-other') returning id");
+  await asRole("authenticated", host, async () => {
+    for (const phone of [null, "", "7011234568", "abc77011234568", "+12025550123", "7".repeat(41)]) {
+      await assert.rejects(query("select public.staff_check_in_by_phone($1,$2,true)", [event, phone]), /Укажите телефон/);
+    }
+    await assert.rejects(query("select public.staff_check_in_by_phone($1,$2,true)", [other, "+77011234568"]), /Участник не найден/);
+    await assert.rejects(query("select public.staff_check_in_by_phone($1,$2,true)", [event, "+77019999999"]), /Участник не найден/);
+    await assert.rejects(query("select public.staff_check_in($1,0,true)", [event]), /корректный номер/);
+    await assert.rejects(query("select public.staff_check_in($1,$2,null)", [event, second.ticket_number]), /состояние присутствия/);
+  });
+});
 await test("seed is valid and test guests cannot leak into the public counter", async () => {
   await db.exec(await readFile("supabase/seed.sql", "utf8"));
   const [{ s }] = await asRole("anon", null, async () =>

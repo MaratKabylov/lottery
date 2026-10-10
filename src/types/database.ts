@@ -42,6 +42,10 @@ export type Participant = {
   created_at: string;
   updated_at: string;
 };
+export type CheckInResult = Omit<Participant, "phone" | "email"> & {
+  phone: null;
+  email: null;
+};
 export type Prize = {
   id: string;
   event_id: string;
@@ -139,7 +143,15 @@ export type Database = {
           p_ticket_number: number;
           p_checked_in: boolean;
         };
-        Returns: Participant;
+        Returns: CheckInResult;
+      };
+      staff_check_in_by_phone: {
+        Args: {
+          p_event_id: string;
+          p_phone: string;
+          p_checked_in: boolean;
+        };
+        Returns: CheckInResult;
       };
       get_staff_stats: {
         Args: { p_event_id: string };
