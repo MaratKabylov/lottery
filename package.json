@@ -10,6 +10,9 @@
     "test": "vitest run --configLoader native",
     "test:db": "node scripts/test-database.mjs",
     "test:concurrency": "node scripts/test-concurrency.mjs",
+    "check:supabase": "node scripts/check-supabase.mjs",
+    "test:integration": "node scripts/test-integration.mjs",
+    "deploy:registration": "node scripts/deploy-registration.mjs",
     "supabase": "supabase"
   },
   "dependencies": {
