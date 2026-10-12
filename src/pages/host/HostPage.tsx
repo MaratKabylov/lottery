@@ -95,7 +95,8 @@ export default function HostPage() {
           победителей
         </span>
       </div>
-      <section className="host-control" aria-label="Режим розыгрыша">
+      <div className="host-controls-grid">
+      <section className="host-control host-mode-control" aria-label="Режим розыгрыша">
         <label className="checkbox-label">
           <input type="checkbox" checked={rehearsal}
             disabled={action.pending || !online || Boolean(pending) || data.draws.isPending || event.status !== "active"}
@@ -123,7 +124,7 @@ export default function HostPage() {
           Ожидаем соединение с сервером. Розыгрыш временно недоступен.
         </div>
       )}
-      <section className="host-control">
+      <section className="host-control host-draw-control">
         <span className="eyebrow">
           {pending ? "СЧАСТЛИВЫЙ МОМЕНТ" : "ЧТО РАЗЫГРАЕМ СЛЕДУЮЩИМ?"}
         </span>
@@ -226,7 +227,7 @@ export default function HostPage() {
           </>
         )}
       </section>
-      <section className="host-control" aria-label="Управление большим экраном">
+      <section className="host-control host-screen-control" aria-label="Управление большим экраном">
         <h2>Большой экран</h2>
         <p className="muted">
           {screen.data?.state.mode === "paused"
@@ -262,6 +263,7 @@ export default function HostPage() {
         </button>
         {pending && <p className="small muted">Завершите текущий розыгрыш, чтобы сменить режим экрана.</p>}
       </section>
+      </div>
       <p className="public-footer">Пусть этот момент запомнится.</p>
     </main>
   );

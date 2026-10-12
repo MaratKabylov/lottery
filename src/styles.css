@@ -994,7 +994,7 @@ code {
   overflow-wrap: anywhere;
 }
 .host-shell {
-  max-width: 950px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 28px;
 }
@@ -1028,13 +1028,22 @@ code {
   font-weight: 500;
   margin-bottom: 4px;
 }
+.host-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(380px, 1.35fr) minmax(280px, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
 .host-control {
   background: #fff;
   border: 1px solid #e3e8d8;
   border-radius: 17px;
-  padding: 40px;
+  padding: 30px;
   text-align: center;
   min-height: 320px;
+}
+.host-draw-control {
+  min-height: 430px;
 }
 .host-control > .eyebrow {
   color: #929e84;
@@ -1080,6 +1089,15 @@ code {
 }
 .host-winner .button-row {
   justify-content: center;
+}
+@media (max-width: 1050px) {
+  .host-controls-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .host-draw-control {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
 }
 .big-screen {
   position: relative;
@@ -1435,6 +1453,14 @@ code {
   }
   .host-shell {
     padding: 20px 16px;
+  }
+  .host-controls-grid {
+    grid-template-columns: 1fr;
+  }
+  .host-draw-control {
+    grid-column: auto;
+    grid-row: auto;
+    min-height: 320px;
   }
   .host-header {
     gap: 8px;
