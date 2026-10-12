@@ -44,6 +44,21 @@ export default function HostPage() {
   const prizeId = pending?.prize_id || selected;
   const winner = screen.data?.winner;
   const rehearsal = Boolean(screen.data?.state.rehearsal_mode);
+  const screenMode = screen.data?.state.mode;
+  const screenModeLabel =
+    screenMode === "waiting"
+      ? "Экран ожидания"
+      : screenMode === "paused"
+        ? "Пауза"
+        : screenMode === "countdown"
+          ? remaining > 0
+            ? `Обратный отсчёт · ${Math.ceil(remaining / 1000)} сек.`
+            : "Обратный отсчёт завершён"
+          : screenMode === "drawing"
+            ? "Розыгрыш"
+            : screenMode === "winner"
+              ? "Победитель"
+              : "Получаем состояние…";
   const online =
     data.connection === "online" &&
     Boolean(screen.data) &&
@@ -229,15 +244,18 @@ export default function HostPage() {
       </section>
       <section className="host-control host-screen-control" aria-label="Управление большим экраном">
         <h2>Большой экран</h2>
-        <p className="muted">
-          {screen.data?.state.mode === "paused"
-            ? "Экран на паузе"
-            : screen.data?.state.mode === "countdown"
-              ? remaining > 0
-                ? `До розыгрыша: ${Math.ceil(remaining / 1000)} сек.`
-                : "Отсчёт завершён. Нажмите «Начать розыгрыш»."
-              : "Выберите режим экрана"}
-        </p>
+        <div
+          className={`screen-mode-status ${screenMode || "loading"}`}
+          role="status"
+          aria-label="Текущий режим большого экрана"
+          aria-live="polite"
+        >
+          <span>Сейчас включён</span>
+          <strong>{screenModeLabel}</strong>
+        </div>
+        {screenMode === "countdown" && remaining <= 0 && (
+          <p className="small muted">Нажмите «Начать розыгрыш».</p>
+        )}
         <div className="button-row">
           <button className="button secondary"
             disabled={action.pending || !online || Boolean(pending) || data.draws.isPending || event.status !== "active"}

@@ -81,6 +81,9 @@ beforeEach(() => {
 });
 it("host sends screen commands to Supabase and validates countdown duration", async () => {
   const user = setup();
+  const screenStatus = screen.getByRole("status", { name: "Текущий режим большого экрана" });
+  expect(screenStatus.textContent).toContain("Сейчас включён");
+  expect(screenStatus.textContent).toContain("Экран ожидания");
   await user.click(screen.getByRole("button", { name: "Пауза" }));
   expect(mock.setMode).toHaveBeenCalledWith("event", "paused");
   await user.click(screen.getByRole("button", { name: "Экран ожидания" }));
