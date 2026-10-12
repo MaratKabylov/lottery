@@ -15,7 +15,7 @@ export async function listDraws(eventId: string) {
   }
   return result;
 }
-export async function drawWinner(eventId: string, prizeId: string) {
+export async function drawWinner(eventId: string, prizeId: string | null) {
   const { data, error } = await supabase.rpc("draw_winner", {
     p_event_id: eventId,
     p_prize_id: prizeId,

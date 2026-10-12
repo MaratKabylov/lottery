@@ -14,6 +14,7 @@ const toggles = [
   ["require_email", "Обязательный email"],
   ["check_in_required", "Только присутствующие участвуют"],
   ["allow_multiple_wins", "Разрешить повторный выигрыш"],
+  ["random_prize_assignment", "Назначать приз случайно"],
   ["show_participant_name", "Показывать имя победителя"],
   ["show_ticket_number", "Показывать номер билета"],
   ["confetti_enabled", "Конфетти на большом экране"],

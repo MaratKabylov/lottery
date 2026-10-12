@@ -15,6 +15,7 @@ const mock = vi.hoisted(() => ({
   connection: "online",
   pending: false,
   remaining: 0,
+  randomPrizeAssignment: false,
 }));
 vi.mock("../src/hooks/useCountdown", () => ({
   useCountdown: () => mock.remaining,
@@ -41,6 +42,7 @@ vi.mock("../src/hooks/useEventData", () => ({
         name: "Открытие",
         status: "active",
         draw_enabled: true,
+        random_prize_assignment: mock.randomPrizeAssignment,
         ticket_digits: 3,
       },
     },
@@ -72,6 +74,7 @@ beforeEach(() => {
   mock.mode = "waiting";
   mock.rehearsal = false;
   mock.awarded = false;
+  mock.randomPrizeAssignment = false;
   mock.setRehearsal.mockResolvedValue({ rehearsal_mode: true });
   mock.draw.mockResolvedValue({ id: "draw" });
   mock.finish.mockResolvedValue({ id: "draw" });
@@ -130,6 +133,14 @@ it("host sends event and prize IDs to the server draw engine", async () => {
   await user.selectOptions(screen.getByRole("combobox"), "prize");
   await user.click(screen.getByRole("button", { name: /Начать розыгрыш/ }));
   expect(mock.draw).toHaveBeenCalledWith("event", "prize");
+});
+it("lets the server assign a random prize when the event setting is enabled", async () => {
+  mock.randomPrizeAssignment = true;
+  const user = setup();
+  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.getByText(/случайно назначен сервером/)).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: /Начать розыгрыш/ }));
+  expect(mock.draw).toHaveBeenCalledWith("event", null);
 });
 it("host cannot draw while offline", async () => {
   mock.connection = "offline";

@@ -15,6 +15,7 @@ export type Event = {
   draw_enabled: boolean;
   check_in_required: boolean;
   allow_multiple_wins: boolean;
+  random_prize_assignment: boolean;
   require_phone: boolean;
   require_email: boolean;
   show_participant_name: boolean;
@@ -141,7 +142,7 @@ export type Database = {
         Returns: ScreenState;
       };
       draw_winner: {
-        Args: { p_event_id: string; p_prize_id: string };
+        Args: { p_event_id: string; p_prize_id: string | null };
         Returns: Draw;
       };
       confirm_draw: { Args: { p_draw_id: string }; Returns: Draw };

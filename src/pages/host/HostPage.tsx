@@ -40,6 +40,7 @@ export default function HostPage() {
   if (!data.event.data) return <ErrorNotice error={data.event.error} />;
   const event = data.event.data;
   const pending = data.draws.data?.find((d) => d.status === "pending");
+  const randomPrizeAssignment = Boolean(event.random_prize_assignment);
   const prizeId = pending?.prize_id || selected;
   const winner = screen.data?.winner;
   const rehearsal = Boolean(screen.data?.state.rehearsal_mode);
@@ -169,28 +170,34 @@ export default function HostPage() {
           <Loading />
         ) : (
           <>
-            <label className="prize-select-label">
-              Выберите приз
-              <select
-                value={prizeId}
-                onChange={(e) => setSelected(e.target.value)}
-              >
-                <option value="">Выберите подарок</option>
-                {eligiblePrizes.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {rehearsal ? "репетиция" : `осталось ${p.quantity -
-                      (data.draws.data || []).filter(
-                        (d) => d.prize_id === p.id && d.status === "confirmed" && !d.is_test,
-                      ).length}`}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {randomPrizeAssignment ? (
+              <div className="notice">
+                Приз будет случайно назначен сервером из доступных призов.
+              </div>
+            ) : (
+              <label className="prize-select-label">
+                Выберите приз
+                <select
+                  value={prizeId}
+                  onChange={(e) => setSelected(e.target.value)}
+                >
+                  <option value="">Выберите подарок</option>
+                  {eligiblePrizes.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {rehearsal ? "репетиция" : `осталось ${p.quantity -
+                        (data.draws.data || []).filter(
+                          (d) => d.prize_id === p.id && d.status === "confirmed" && !d.is_test,
+                        ).length}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button
               className="button draw-button"
               disabled={
-                !prizeId ||
-                !eligiblePrizes.some((p) => p.id === prizeId) ||
+                (!randomPrizeAssignment && (!prizeId || !eligiblePrizes.some((p) => p.id === prizeId))) ||
+                (randomPrizeAssignment && !eligiblePrizes.length) ||
                 action.pending ||
                 !online ||
                 event.status !== "active" ||
@@ -200,7 +207,10 @@ export default function HostPage() {
                 data.draws.isPending
               }
               onClick={() =>
-                void action.run(() => drawWinner(eventId, prizeId), refresh)
+                void action.run(
+                  () => drawWinner(eventId, randomPrizeAssignment ? null : prizeId),
+                  refresh,
+                )
               }
             >
               <Play size={20} />

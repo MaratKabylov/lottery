@@ -564,6 +564,42 @@ await test("rehearsals isolate test guests, preserve inventory, reset the screen
   assert.equal(audit.n, 2);
 });
 
+await test("random prize assignment is server-side and excludes exhausted inventory", async () => {
+  const [{ id: randomEvent }] = await query(
+    "insert into public.events(name,slug,status,require_phone,random_prize_assignment,draw_animation_seconds) values('Random prizes','random-prizes','active',false,true,1) returning id",
+  );
+  const [{ id: exhaustedPrize }] = await query(
+    "insert into public.prizes(event_id,name,quantity) values($1,'Exhausted',1) returning id",
+    [randomEvent],
+  );
+  const [{ id: availablePrize }] = await query(
+    "insert into public.prizes(event_id,name,quantity) values($1,'Available',1) returning id",
+    [randomEvent],
+  );
+  const [{ id: previousWinner }] = await query(
+    "insert into public.participants(event_id,name,ticket_number) values($1,'Previous winner',1) returning id",
+    [randomEvent],
+  );
+  await query(
+    "insert into public.participants(event_id,name,ticket_number) values($1,'Eligible guest',2)",
+    [randomEvent],
+  );
+  await query(
+    "insert into public.draws(event_id,prize_id,participant_id,status,participants_count,confirmed_at) values($1,$2,$3,'confirmed',2,clock_timestamp())",
+    [randomEvent, exhaustedPrize, previousWinner],
+  );
+  const [{ d: randomDraw }] = await asRole("authenticated", host, async () =>
+    query("select public.draw_winner($1,null) as d", [randomEvent]),
+  );
+  assert.equal(randomDraw.prize_id, availablePrize);
+  const [{ metadata }] = await query(
+    "select metadata from public.audit_logs where entity_id=$1 and action='draw_started'",
+    [randomDraw.id],
+  );
+  assert.equal(metadata.random_prize_assignment, true);
+  assert.equal(metadata.prize_id, availablePrize);
+});
+
 await test("seed is valid and test guests cannot leak into the public counter", async () => {
   await db.exec(await readFile("supabase/seed.sql", "utf8"));
   const [{ s }] = await asRole("anon", null, async () =>
