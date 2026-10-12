@@ -28,9 +28,31 @@ export default function ParticipantsPage() {
       ?.filter((d) => d.status === "confirmed" && !d.is_test)
       .map((d) => d.participant_id),
   );
+  const prizeNames = new Map(
+    (data.prizes.data || []).map((prize) => [prize.id, prize.name]),
+  );
+  const winningsByParticipant = new Map<
+    string,
+    Map<string, { label: string; count: number; isTest: boolean }>
+  >();
+  for (const draw of data.draws.data || []) {
+    if (draw.status !== "confirmed") continue;
+    const participantWinnings =
+      winningsByParticipant.get(draw.participant_id) || new Map();
+    const key = `${draw.is_test ? "test" : "real"}:${draw.prize_id}`;
+    const existing = participantWinnings.get(key);
+    participantWinnings.set(key, {
+      label: prizeNames.get(draw.prize_id) || "Приз",
+      count: (existing?.count || 0) + 1,
+      isTest: draw.is_test,
+    });
+    winningsByParticipant.set(draw.participant_id, participantWinnings);
+  }
+  const winningsFor = (participantId: string) =>
+    [...(winningsByParticipant.get(participantId)?.values() || [])];
   const rows = (data.participants.data || [])
     .filter((p) =>
-      `${p.name} ${p.phone || ""} ${p.email || ""} ${formatTicket(p.ticket_number)}`
+      `${p.name} ${p.phone || ""} ${p.email || ""} ${formatTicket(p.ticket_number)} ${winningsFor(p.id).map((winning) => winning.label).join(" ")}`
         .toLowerCase()
         .includes(search.toLowerCase()),
     )
@@ -87,6 +109,7 @@ export default function ParticipantsPage() {
               [
                 "№",
                 "Имя",
+                "Выигрыш",
                 "Телефон",
                 "Email",
                 "Присутствует",
@@ -97,6 +120,9 @@ export default function ParticipantsPage() {
               ...rows.map((p) => [
                 p.ticket_number,
                 p.name,
+                winningsFor(p.id)
+                  .map((winning) => `${winning.isTest ? "Тест: " : ""}${winning.label}${winning.count > 1 ? ` ×${winning.count}` : ""}`)
+                  .join("; "),
                 p.phone,
                 p.email,
                 p.checked_in,
@@ -156,6 +182,7 @@ export default function ParticipantsPage() {
               <tr>
                 <th>№</th>
                 <th>Гость</th>
+                <th>Выигрыш</th>
                 <th>Контакты</th>
                 <th>Регистрация</th>
                 <th>Присутствие</th>
@@ -175,6 +202,24 @@ export default function ParticipantsPage() {
                     <strong>{p.name}</strong>
                     {p.is_test && <small>Тестовый</small>}
                     {winners.has(p.id) && <small>🏆 Победитель</small>}
+                  </td>
+                  <td>
+                    {winningsFor(p.id).length ? (
+                      <div className="winning-list">
+                        {winningsFor(p.id).map((winning) => (
+                          <span
+                            className={`winning-prize ${winning.isTest ? "test" : ""}`}
+                            key={`${winning.isTest ? "test" : "real"}-${winning.label}`}
+                          >
+                            {winning.isTest && "Тест: "}
+                            {winning.label}
+                            {winning.count > 1 && ` ×${winning.count}`}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td>
                     {p.phone || "—"}

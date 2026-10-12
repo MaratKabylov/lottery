@@ -728,6 +728,25 @@ td small {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
+.winning-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.winning-prize {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f3edda;
+  color: #806c35;
+  font-size: 10px;
+  font-weight: 600;
+}
+.winning-prize.test {
+  background: #eef0e9;
+  color: #7f8978;
+}
 .pill {
   border: 1px solid #e4e7dc;
   background: #f6f7f0;
