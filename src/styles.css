@@ -1246,13 +1246,6 @@ code {
   font-size: 19px;
   font-weight: 500;
 }
-.screen-footer {
-  position: relative;
-  text-align: center;
-  font-size: 8px;
-  letter-spacing: 0.2em;
-  color: #b6c8a2;
-}
 .screen-controls {
   position: absolute;
   left: 50%;

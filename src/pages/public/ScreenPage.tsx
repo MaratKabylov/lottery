@@ -209,9 +209,6 @@ export default function ScreenPage() {
       <div className="screen-errors">
         <ErrorNotice error={screen.error || controlError} />
       </div>
-      <footer className="screen-footer">
-        МАЛЕНЬКИЕ НОМЕРА. БОЛЬШИЕ МОМЕНТЫ.
-      </footer>
     </main>
   );
 }
