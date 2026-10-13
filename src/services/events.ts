@@ -28,10 +28,21 @@ export async function getPublicEvent(slug: string) {
   return data;
 }
 export async function saveEvent(values: Partial<Event>, id?: string) {
-  const request = id
-    ? supabase.from("events").update(values).eq("id", id)
-    : supabase.from("events").insert(values);
-  const { data, error } = await request.select().single();
+  if (!id) {
+    const { data, error } = await supabase.rpc("create_event", {
+      p_name: values.name || "",
+      p_slug: values.slug || "",
+      p_description: values.description ?? null,
+    });
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase
+    .from("events")
+    .update(values)
+    .eq("id", id)
+    .select()
+    .single();
   if (error) throw error;
   return data;
 }
@@ -60,4 +71,39 @@ export async function getStaffStats(eventId: string) {
   });
   if (error) throw error;
   return data;
+}
+
+export async function listHosts() {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id,display_name")
+    .eq("role", "host")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+export async function listEventHostIds(eventId: string) {
+  const { data, error } = await supabase
+    .from("event_staff")
+    .select("user_id")
+    .eq("event_id", eventId);
+  if (error) throw error;
+  return data.map((row) => row.user_id);
+}
+
+export async function setEventHost(
+  eventId: string,
+  userId: string,
+  enabled: boolean,
+) {
+  const request = enabled
+    ? supabase.from("event_staff").insert({ event_id: eventId, user_id: userId })
+    : supabase
+        .from("event_staff")
+        .delete()
+        .eq("event_id", eventId)
+        .eq("user_id", userId);
+  const { error } = await request;
+  if (error) throw error;
 }

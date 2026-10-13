@@ -4,6 +4,11 @@ export type Profile = {
   display_name: string | null;
   created_at: string;
 };
+export type EventStaff = {
+  event_id: string;
+  user_id: string;
+  created_at: string;
+};
 export type Event = {
   id: string;
   name: string;
@@ -125,6 +130,7 @@ export type Database = {
   public: {
     Tables: {
       profiles: Table<Profile>;
+      event_staff: Table<EventStaff>;
       events: Table<Event>;
       participants: Table<Participant>;
       prizes: Table<Prize>;
@@ -133,6 +139,10 @@ export type Database = {
     };
     Views: { public_event_view: { Row: PublicEvent; Relationships: [] } };
     Functions: {
+      create_event: {
+        Args: { p_name: string; p_slug: string; p_description: string | null };
+        Returns: Event;
+      };
       set_rehearsal_mode: {
         Args: { p_event_id: string; p_enabled: boolean };
         Returns: ScreenState;

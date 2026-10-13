@@ -31,8 +31,9 @@ for (const file of (await readdir("supabase/migrations"))
 }
 const admin = "00000000-0000-0000-0000-000000000001";
 const host = "00000000-0000-0000-0000-000000000002";
-await db.exec(`insert into auth.users values ('${admin}'),('${host}');
-insert into public.profiles(id,role) values ('${admin}','admin'),('${host}','host');`);
+const secondAdmin = "00000000-0000-0000-0000-000000000003";
+await db.exec(`insert into auth.users values ('${admin}'),('${host}'),('${secondAdmin}');
+insert into public.profiles(id,role) values ('${admin}','admin'),('${host}','host'),('${secondAdmin}','admin');`);
 const query = async (sql, args = []) => (await db.query(sql, args)).rows;
 const asRole = async (role, user, fn) => {
   await db.exec(
@@ -53,8 +54,10 @@ async function test(name, fn) {
   console.log(`PASS ${name}`);
 }
 const [{ id: event }] = await query(
-  `insert into public.events(name,slug,status,draw_animation_seconds) values ('Test','test','active',1) returning id`,
+  `insert into public.events(name,slug,status,draw_animation_seconds,created_by) values ('Test','test','active',1,$1) returning id`,
+  [admin],
 );
+await query(`insert into public.event_staff(event_id,user_id) values ($1,$2)`, [event, host]);
 const [{ id: prize }] = await query(
   `insert into public.prizes(event_id,name,quantity) values ($1,'Prize',10) returning id`,
   [event],
@@ -150,6 +153,34 @@ await test("host cannot change settings, read contacts, or elevate their role", 
     );
   });
 });
+await test("event owners are isolated and hosts only see explicit assignments", async () => {
+  await asRole("authenticated", secondAdmin, async () => {
+    assert.equal((await query("select public.is_admin() as ok"))[0].ok, true);
+  });
+  const [{ event: createdEvent }] = await asRole("authenticated", secondAdmin, () =>
+    query("select public.create_event('Private','private',null) as event"),
+  );
+  const foreignEvent = createdEvent.id;
+  await asRole("authenticated", admin, async () => {
+    assert.equal((await query("select id from public.events where id=$1", [foreignEvent])).length, 0);
+    await assert.rejects(
+      query("select public.set_screen_mode($1,'paused',null)", [foreignEvent]),
+      /Доступ запрещён/,
+    );
+  });
+  await asRole("authenticated", host, async () => {
+    assert.equal((await query("select id from public.events where id=$1", [foreignEvent])).length, 0);
+  });
+  await asRole("authenticated", secondAdmin, async () => {
+    await query("insert into public.event_staff(event_id,user_id) values ($1,$2)", [foreignEvent, host]);
+  });
+  await asRole("authenticated", host, async () => {
+    assert.equal((await query("select id from public.events where id=$1", [foreignEvent])).length, 1);
+  });
+  await asRole("authenticated", secondAdmin, async () => {
+    await query("delete from public.event_staff where event_id=$1 and user_id=$2", [foreignEvent, host]);
+  });
+});
 await test("database rejects duplicate tickets and cross-event references", async () => {
   await assert.rejects(
     query(
@@ -159,7 +190,8 @@ await test("database rejects duplicate tickets and cross-event references", asyn
     /unique/,
   );
   const [{ id: other }] = await query(
-    `insert into public.events(name,slug,status) values ('Other','other','draft') returning id`,
+    `insert into public.events(name,slug,status,created_by) values ('Other','other','draft',$1) returning id`,
+    [admin],
   );
   const [{ id: otherPrize }] = await query(
     `insert into public.prizes(event_id,name) values($1,'Other') returning id`,
@@ -434,7 +466,8 @@ await test("check-in rejects anonymous users and authenticated users without a s
   }
 });
 await test("check-in validates input and scopes phone lookup to its event", async () => {
-  const [{ id: other }] = await query("insert into public.events(name,slug) values ('Check-in other','check-in-other') returning id");
+  const [{ id: other }] = await query("insert into public.events(name,slug,created_by) values ('Check-in other','check-in-other',$1) returning id", [admin]);
+  await query("insert into public.event_staff(event_id,user_id) values ($1,$2)", [other, host]);
   await asRole("authenticated", host, async () => {
     for (const phone of [null, "", "7011234568", "abc77011234568", "+12025550123", "7".repeat(41)]) {
       await assert.rejects(query("select public.staff_check_in_by_phone($1,$2,true)", [event, phone]), /Укажите телефон/);
@@ -453,7 +486,8 @@ await test("screen commands reject anonymous and non-staff callers", async () =>
   }
 });
 await test("screen commands are audited, protect pending draws and enforce pause/countdown on the server", async () => {
-  const [{ id: controlled }] = await query("insert into public.events(name,slug,status,require_phone) values ('Screen controls','screen-controls','active',false) returning id");
+  const [{ id: controlled }] = await query("insert into public.events(name,slug,status,require_phone,created_by) values ('Screen controls','screen-controls','active',false,$1) returning id", [admin]);
+  await query("insert into public.event_staff(event_id,user_id) values ($1,$2)", [controlled, host]);
   const [{ id: gift }] = await query("insert into public.prizes(event_id,name) values ($1,'Gift') returning id", [controlled]);
   await asRole("service_role", null, async () => query("select public.register_participant('screen-controls','Guest',null,null)"));
   await asRole("authenticated", host, async () => {
@@ -489,7 +523,7 @@ await test("screen commands are audited, protect pending draws and enforce pause
   await query("update public.events set status='finished' where id=$1", [controlled]);
   await asRole("authenticated", host, async () => {
     await assert.rejects(query("select public.set_screen_mode($1,'paused',null)", [controlled]), /не активно/);
-    await assert.rejects(query("select public.set_screen_mode('00000000-0000-0000-0000-000000000099','paused',null)"), /не активно/);
+    await assert.rejects(query("select public.set_screen_mode('00000000-0000-0000-0000-000000000099','paused',null)"), /Доступ запрещён/);
   });
 });
 await test("rehearsal mode rejects anon, non-staff and direct screen writes", async () => {
@@ -506,7 +540,8 @@ await test("rehearsal mode rejects anon, non-staff and direct screen writes", as
 });
 
 await test("rehearsals isolate test guests, preserve inventory, reset the screen and leave production winners unchanged", async () => {
-  const [{ id: rehearsalEvent }] = await query("insert into public.events(name,slug,status,require_phone,check_in_required,draw_animation_seconds) values('Rehearsal','rehearsal','active',false,true,1) returning id");
+  const [{ id: rehearsalEvent }] = await query("insert into public.events(name,slug,status,require_phone,check_in_required,draw_animation_seconds,created_by) values('Rehearsal','rehearsal','active',false,true,1,$1) returning id", [admin]);
+  await query("insert into public.event_staff(event_id,user_id) values ($1,$2)", [rehearsalEvent, host]);
   const [{ id: rehearsalPrize }] = await query("insert into public.prizes(event_id,name,quantity) values($1,'Rehearsal prize',1) returning id", [rehearsalEvent]);
   const [{ r: real }] = await asRole("service_role", null, async () => query("select public.register_participant('rehearsal','Real guest',null,null) as r"));
   await asRole("authenticated", admin, async () => query("select public.manage_test_participants($1,10,false)", [rehearsalEvent]));
@@ -566,8 +601,10 @@ await test("rehearsals isolate test guests, preserve inventory, reset the screen
 
 await test("random prize assignment is server-side and excludes exhausted inventory", async () => {
   const [{ id: randomEvent }] = await query(
-    "insert into public.events(name,slug,status,require_phone,random_prize_assignment,draw_animation_seconds) values('Random prizes','random-prizes','active',false,true,1) returning id",
+    "insert into public.events(name,slug,status,require_phone,random_prize_assignment,draw_animation_seconds,created_by) values('Random prizes','random-prizes','active',false,true,1,$1) returning id",
+    [admin],
   );
+  await query("insert into public.event_staff(event_id,user_id) values ($1,$2)", [randomEvent, host]);
   const [{ id: exhaustedPrize }] = await query(
     "insert into public.prizes(event_id,name,quantity) values($1,'Exhausted',1) returning id",
     [randomEvent],

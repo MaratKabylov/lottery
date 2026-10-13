@@ -1,11 +1,18 @@
 import { useParams } from "react-router-dom";
 import type { FormEvent } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEventData } from "../../hooks/useEventData";
 import { useAction } from "../../hooks/useAction";
 import { EventNav } from "../../components/ui/EventNav";
 import { ErrorNotice, Loading } from "../../components/ui/Feedback";
-import { assetUrl, saveEvent, uploadAsset } from "../../services/events";
+import {
+  assetUrl,
+  listEventHostIds,
+  listHosts,
+  saveEvent,
+  setEventHost,
+  uploadAsset,
+} from "../../services/events";
 import type { Event } from "../../types/database";
 const toggles = [
   ["registration_enabled", "Регистрация открыта"],
@@ -25,6 +32,12 @@ export default function SettingsPage() {
   const data = useEventData(eventId);
   const client = useQueryClient();
   const action = useAction();
+  const hosts = useQuery({ queryKey: ["hosts"], queryFn: listHosts });
+  const assignedHosts = useQuery({
+    queryKey: ["event-hosts", eventId],
+    queryFn: () => listEventHostIds(eventId),
+    enabled: Boolean(eventId),
+  });
   if (data.event.isPending) return <Loading />;
   if (!data.event.data) return <ErrorNotice error={data.event.error} />;
   const event = data.event.data;
@@ -158,6 +171,45 @@ export default function SettingsPage() {
           </button>
         </div>
       </form>
+      <section className="panel">
+        <h2>Ведущие мероприятия</h2>
+        <p className="muted">
+          Назначенные ведущие увидят только это мероприятие и смогут проводить
+          розыгрыш, но не менять его настройки.
+        </p>
+        <ErrorNotice error={hosts.error || assignedHosts.error} />
+        {hosts.isPending || assignedHosts.isPending ? (
+          <Loading />
+        ) : !hosts.data?.length ? (
+          <p className="muted">Профили с ролью host пока не добавлены.</p>
+        ) : (
+          <div className="form-grid">
+            {hosts.data.map((host) => {
+              const assigned = assignedHosts.data?.includes(host.id) ?? false;
+              return (
+                <label className="checkbox-label" key={host.id}>
+                  <input
+                    type="checkbox"
+                    checked={assigned}
+                    onChange={(change) => {
+                      const enabled = change.currentTarget.checked;
+                      void action.run(
+                        () => setEventHost(eventId, host.id, enabled),
+                        () => {
+                          void client.invalidateQueries({
+                            queryKey: ["event-hosts", eventId],
+                          });
+                        },
+                      );
+                    }}
+                  />
+                  {host.display_name || host.id}
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </section>
   );
 }

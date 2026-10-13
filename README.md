@@ -115,8 +115,9 @@ values ('<auth-user-uuid>', 'admin', 'Организатор');
 | `202610100005_test_participants.sql` | Защищённое создание / удаление тестовых участников |
 | `202610100006_check_in.sql` | Check-in по телефону, серверная нормализация, сохранение времени и аудита при повторных запросах |
 | `202610100007_screen_controls.sql` | Управление ожиданием, паузой и отсчётом, защита текущего розыгрыша, аудит и серверный запрет запуска на паузе / до окончания отсчёта |
+| `202610130001_event_access.sql` | Владение мероприятиями, явное назначение ведущих, RLS и RPC-проверки доступа ко всем данным мероприятия |
 
-Таблицы: `profiles`, `events`, `participants`, `event_ticket_counters`, `prizes`, `draws`, `event_screen_state`, `audit_logs`, `registration_rate_limits`. На каждой включён RLS.
+Таблицы: `profiles`, `events`, `event_staff`, `participants`, `event_ticket_counters`, `prizes`, `draws`, `event_screen_state`, `audit_logs`, `registration_rate_limits`. На каждой включён RLS.
 
 Представления: `public_event_view`, `event_stats`, `prize_stats`, `confirmed_winners`. Публичное представление намеренно выполняется с правами владельца, но содержит только разрешённые колонки активных / завершённых мероприятий и явный фильтр; административные views используют `security_invoker` и RLS.
 
@@ -126,6 +127,7 @@ RPC:
 | --- | --- |
 | `register_participant` | Только service-role клиент Edge Function |
 | `consume_registration_limit` | Только service-role клиент Edge Function |
+| `create_event` | Только `admin`; владелец всегда определяется сервером по `auth.uid()` |
 | `draw_winner`, `confirm_draw`, `cancel_draw` | Авторизованный `admin` / `host` |
 | `set_screen_mode` | Авторизованный `admin` / `host`, только активное мероприятие без pending draw |
 | `staff_check_in` | Авторизованный `admin` / `host`, возвращает данные без phone/email |
@@ -139,8 +141,8 @@ RPC:
 RLS / grants:
 
 - `anon`: только `public_event_view`, разрешённые строки `event_screen_state` и безопасный public screen RPC; нет доступа к контактам, прямой регистрации и таблице draws.
-- `host`: чтение мероприятий / призов / истории, собственный профиль, draw и check-in RPC; без изменения настроек, призов, профилей и чтения контактов / аудита.
-- `admin`: управление мероприятиями, призами и профилями, чтение контактов / аудита; изменение только разрешённых полей участника. Прямое изменение draws запрещено даже администратору — только RPC.
+- `host`: чтение только явно назначенных мероприятий / призов / истории, собственный профиль, draw и check-in RPC; без изменения настроек, призов, профилей и чтения контактов / аудита.
+- `admin`: управление только созданными им мероприятиями, их призами, контактами участников и аудитом; назначение ведущих через настройки мероприятия. Прямое изменение draws запрещено даже владельцу — только RPC.
 - Таблицы счётчиков и rate limit закрыты от клиента. Сервисный ключ использует только Edge runtime.
 
 Seed создаёт активное мероприятие `opening-2026`, пять видов призов и десять участников `is_test=true`. Они не участвуют в розыгрышах и публичном счётчике. Первый реальный билет seed-мероприятия — №011; в новом пустом мероприятии — №001. Удаление тестовых гостей не переиспользует номера.
@@ -294,6 +296,6 @@ npm.cmd run supabase -- migration up
 - Живая проверка Turnstile с настроенными ключами и эксплуатационная настройка доверенного ingress / IP throttling.
 - UI управления сотрудниками.
 
-SMS, мессенджеры, платежи, сложная аналитика, мобильное приложение и multi-tenant SaaS не включены согласно ТЗ.
+SMS, мессенджеры, платежи, сложная аналитика, мобильное приложение и биллинг multi-tenant SaaS не включены согласно ТЗ.
 
 Официальные справочники: [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [Supabase API keys](https://supabase.com/docs/guides/getting-started/api-keys), [Edge Function auth](https://supabase.com/docs/guides/functions/auth), [Vite](https://vite.dev/guide/), [Tailwind Vite integration](https://tailwindcss.com/docs/installation/using-vite).
