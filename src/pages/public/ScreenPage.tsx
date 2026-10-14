@@ -97,101 +97,109 @@ export default function ScreenPage() {
   if (screen.isPending) return <Loading />;
   if (!screen.data) return <ErrorNotice error={screen.error} />;
   const { event, prize, state, participant_count } = screen.data;
+  const splitScreen = Boolean(event.screen_banner_enabled && event.screen_banner_path);
   return (
     <main
-      className="big-screen"
+      className={`big-screen${splitScreen ? " big-screen-split" : ""}`}
       style={{ "--event-color": event.primary_color } as CSSProperties}
       onPointerMove={showControls}
       onKeyDown={showControls}
       onTouchStart={showControls}
     >
-      <div className="screen-orbit orbit-one" />
-      <div className="screen-orbit orbit-two" />
-      <header className="screen-header">
-        {event.logo_path ? (
-          <img src={assetUrl(event.logo_path)} alt={event.name} />
-        ) : (
-          <span className="screen-brand">✳ EventDraw.</span>
-        )}
-        <Connection status={screen.connection} />
-        {screen.data.state.rehearsal_mode && <span className="badge">ТЕСТОВЫЙ РОЗЫГРЫШ · РЕПЕТИЦИЯ</span>}
-      </header>
-      <section className="screen-content">
-        <span className="eyebrow">{event.name}</span>
-        {state.mode === "countdown" ? (
-          <>
-            <h1>{remaining > 0 ? "Розыгрыш скоро начнётся" : "Готовы к розыгрышу?"}</h1>
-            {remaining > 0 && (
-              <div className="screen-countdown" role="timer">
+      <div className="screen-stage">
+        <div className="screen-orbit orbit-one" />
+        <div className="screen-orbit orbit-two" />
+        <header className="screen-header">
+          {event.logo_path ? (
+            <img src={assetUrl(event.logo_path)} alt={event.name} />
+          ) : (
+            <span className="screen-brand">✳ EventDraw.</span>
+          )}
+          <Connection status={screen.connection} />
+          {screen.data.state.rehearsal_mode && <span className="badge">ТЕСТОВЫЙ РОЗЫГРЫШ · РЕПЕТИЦИЯ</span>}
+        </header>
+        <section className="screen-content">
+          <span className="eyebrow">{event.name}</span>
+          {state.mode === "countdown" ? (
+            <>
+              <h1>{remaining > 0 ? "Розыгрыш скоро начнётся" : "Готовы к розыгрышу?"}</h1>
+              {remaining > 0 && (
+                <div className="screen-countdown" role="timer">
+                  {Math.ceil(remaining / 1000)}
+                </div>
+              )}
+              <p>{remaining > 0 ? "Приготовьте свой номер" : "Ждём старта от ведущего"}</p>
+            </>
+          ) : drawing ? (
+            <>
+              <h1>
+                Ваш счастливый
+                <br />
+                момент близко
+              </h1>
+              <span className="drawing-star">✳</span>
+              <div className="screen-countdown">
                 {Math.ceil(remaining / 1000)}
               </div>
-            )}
-            <p>{remaining > 0 ? "Приготовьте свой номер" : "Ждём старта от ведущего"}</p>
-          </>
-        ) : drawing ? (
-          <>
-            <h1>
-              Ваш счастливый
-              <br />
-              момент близко
-            </h1>
-            <span className="drawing-star">✳</span>
-            <div className="screen-countdown">
-              {Math.ceil(remaining / 1000)}
-            </div>
-            <p>{prize?.name}</p>
-          </>
-        ) : winner ? (
-          <>
-            <span className="winner-label">ПОЗДРАВЛЯЕМ ПОБЕДИТЕЛЯ</span>
-            {screen.data.winner?.ticket_number !== null && (
-              <div className="winner-ticket">
-                №
-                {formatTicket(
-                  screen.data.winner!.ticket_number!,
-                  event.ticket_digits,
-                )}
+              <p>{prize?.name}</p>
+            </>
+          ) : winner ? (
+            <>
+              <span className="winner-label">ПОЗДРАВЛЯЕМ ПОБЕДИТЕЛЯ</span>
+              {screen.data.winner?.ticket_number !== null && (
+                <div className="winner-ticket">
+                  №
+                  {formatTicket(
+                    screen.data.winner!.ticket_number!,
+                    event.ticket_digits,
+                  )}
+                </div>
+              )}
+              {screen.data.winner?.name && (
+                <h1 className="winner-name">{screen.data.winner.name}</h1>
+              )}
+              <h2>{prize?.name}</h2>
+              {prize?.image_path && (
+                <img
+                  className="screen-prize"
+                  src={assetUrl(prize.image_path)}
+                  alt={prize.name}
+                />
+              )}
+              <p className="winner-hint">
+                {state.rehearsal_mode ? "Результат репетиции — приз не выдаётся" : screen.data.winner?.status === "confirmed"
+                  ? "Ваш подарок ждёт вас!"
+                  : "Подойдите к ведущему"}
+              </p>
+            </>
+          ) : state.mode === "paused" ? (
+            <>
+              <h1>Небольшая пауза</h1>
+              <p>Скоро продолжим.</p>
+            </>
+          ) : (
+            <>
+              <h1>
+                Этот момент
+                <br />
+                <em>может стать вашим.</em>
+              </h1>
+              <p>{state.rehearsal_mode ? "Репетиция с тестовыми участниками" : "Присоединяйтесь к розыгрышу подарков"}</p>
+              {!state.rehearsal_mode && event.status === "active" && event.registration_enabled && (
+                <RegistrationQR slug={event.slug} />
+              )}
+              <div className="participant-counter">
+                <strong>{participant_count}</strong> участников уже с нами
               </div>
-            )}
-            {screen.data.winner?.name && (
-              <h1 className="winner-name">{screen.data.winner.name}</h1>
-            )}
-            <h2>{prize?.name}</h2>
-            {prize?.image_path && (
-              <img
-                className="screen-prize"
-                src={assetUrl(prize.image_path)}
-                alt={prize.name}
-              />
-            )}
-            <p className="winner-hint">
-              {state.rehearsal_mode ? "Результат репетиции — приз не выдаётся" : screen.data.winner?.status === "confirmed"
-                ? "Ваш подарок ждёт вас!"
-                : "Подойдите к ведущему"}
-            </p>
-          </>
-        ) : state.mode === "paused" ? (
-          <>
-            <h1>Небольшая пауза</h1>
-            <p>Скоро продолжим.</p>
-          </>
-        ) : (
-          <>
-            <h1>
-              Этот момент
-              <br />
-              <em>может стать вашим.</em>
-            </h1>
-            <p>{state.rehearsal_mode ? "Репетиция с тестовыми участниками" : "Присоединяйтесь к розыгрышу подарков"}</p>
-            {!state.rehearsal_mode && event.status === "active" && event.registration_enabled && (
-              <RegistrationQR slug={event.slug} />
-            )}
-            <div className="participant-counter">
-              <strong>{participant_count}</strong> участников уже с нами
-            </div>
-          </>
-        )}
-      </section>
+            </>
+          )}
+        </section>
+      </div>
+      {splitScreen && (
+        <aside className="screen-banner" aria-label="Рекламный баннер">
+          <img src={assetUrl(event.screen_banner_path)} alt="Рекламный баннер мероприятия" />
+        </aside>
+      )}
       <div
         className={`screen-controls ${controls ? "visible" : ""}`}
         onFocus={() => setControls(true)}

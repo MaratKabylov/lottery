@@ -1161,6 +1161,86 @@ code {
   display: flex;
   flex-direction: column;
 }
+.screen-stage {
+  display: contents;
+}
+.big-screen.big-screen-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+}
+.big-screen-split .screen-stage {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+  min-height: 100vh;
+  padding: 30px 3vw;
+  overflow: hidden;
+  container-type: inline-size;
+}
+.big-screen-split .screen-header {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.big-screen-split .screen-content {
+  overflow-wrap: anywhere;
+}
+.big-screen-split .screen-content h1 {
+  font-size: clamp(28px, 7cqw, 64px);
+}
+.big-screen-split .winner-ticket {
+  font-size: clamp(60px, 22cqw, 180px);
+}
+.big-screen-split .screen-content h2 {
+  font-size: clamp(20px, 4.5cqw, 36px);
+}
+.big-screen-split .screen-controls {
+  left: 25%;
+}
+.screen-banner {
+  position: relative;
+  min-width: 0;
+  background: #0c1f1b;
+  border-left: 1px solid #ffffff18;
+}
+.screen-banner > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.screen-banner-settings > .checkbox-label {
+  margin-top: 20px;
+}
+.screen-banner-preview {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: 300px;
+  object-fit: contain;
+  background: #0c1f1b;
+  border-radius: 12px;
+  margin-top: 16px;
+}
+@media (max-width: 700px) {
+  .big-screen-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .big-screen-split .screen-stage {
+    padding: 24px;
+  }
+  .big-screen-split .screen-controls {
+    position: fixed;
+    left: 50%;
+  }
+  .screen-banner {
+    min-height: 70vh;
+    border-left: 0;
+    border-top: 1px solid #ffffff18;
+  }
+}
 .screen-header {
   display: flex;
   justify-content: space-between;

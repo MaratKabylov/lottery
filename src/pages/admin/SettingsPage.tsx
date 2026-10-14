@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEventData } from "../../hooks/useEventData";
 import { useAction } from "../../hooks/useAction";
 import { EventNav } from "../../components/ui/EventNav";
+import { ScreenBannerSettings } from "../../components/ui/ScreenBannerSettings";
 import { ErrorNotice, Loading } from "../../components/ui/Feedback";
 import {
   assetUrl,
@@ -59,10 +60,20 @@ export default function SettingsPage() {
       primary_color: String(form.get("primary_color")),
       ticket_digits: Number(form.get("ticket_digits")),
       draw_animation_seconds: Number(form.get("draw_animation_seconds")),
+      screen_banner_enabled: form.get("screen_banner_enabled") === "on",
     };
     for (const [key] of toggles) values[key] = form.get(key) === "on";
     void action.run(
       async () => {
+        const banner = form.get("screen_banner");
+        if (banner instanceof File && banner.size)
+          values.screen_banner_path = await uploadAsset(eventId, banner, "screen-banner");
+        if (
+          values.screen_banner_enabled &&
+          !values.screen_banner_path &&
+          !event.screen_banner_path
+        )
+          throw new Error("Загрузите рекламный баннер, чтобы разделить экран");
         const file = form.get("logo");
         if (file instanceof File && file.size)
           values.logo_path = await uploadAsset(eventId, file, "logo");
@@ -71,6 +82,7 @@ export default function SettingsPage() {
       () => {
         void client.invalidateQueries({ queryKey: ["event", eventId] });
         void client.invalidateQueries({ queryKey: ["events"] });
+        void client.invalidateQueries({ queryKey: ["screen"] });
       },
     );
   }
@@ -171,6 +183,7 @@ export default function SettingsPage() {
             {label}
           </label>
         ))}
+        <ScreenBannerSettings event={event} />
         <div className="full">
           <ErrorNotice error={action.error} />
           <button className="button" disabled={action.pending}>

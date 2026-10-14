@@ -15,6 +15,8 @@ export type Event = {
   slug: string;
   description: string | null;
   logo_path: string | null;
+  screen_banner_enabled: boolean;
+  screen_banner_path: string | null;
   status: "draft" | "active" | "finished" | "archived";
   registration_enabled: boolean;
   draw_enabled: boolean;
@@ -103,7 +105,10 @@ export type PublicEvent = Pick<
   | "check_in_required"
 >;
 export type ScreenSnapshot = {
-  event: PublicEvent & Pick<Event, "confetti_enabled" | "sound_enabled">;
+  event: PublicEvent & Pick<
+    Event,
+    "confetti_enabled" | "sound_enabled" | "screen_banner_enabled" | "screen_banner_path"
+  >;
   state: ScreenState;
   participant_count: number;
   prize: Pick<Prize, "name" | "description" | "image_path"> | null;

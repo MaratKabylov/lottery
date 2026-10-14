@@ -76,6 +76,25 @@ const register = async (phone, name = "Guest") =>
         )
       )[0].result,
   );
+await test("screen advertising defaults off, requires a banner and is included in the anonymous snapshot", async () => {
+  const snapshot = () => asRole("anon", null, async () =>
+    (await query("select public.get_public_screen('test') as screen"))[0].screen,
+  );
+  assert.equal((await snapshot()).event.screen_banner_enabled, false);
+  assert.equal((await snapshot()).event.screen_banner_path, null);
+  await asRole("authenticated", admin, async () => {
+    await assert.rejects(query("update public.events set screen_banner_enabled=true where id=$1", [event]), /events_screen_banner_required/);
+    await query("update public.events set screen_banner_enabled=true,screen_banner_path=$2 where id=$1", [event, `events/${event}/screen-banner.webp`]);
+  });
+  const enabled = await snapshot();
+  assert.equal(enabled.event.screen_banner_enabled, true);
+  assert.equal(enabled.event.screen_banner_path, `events/${event}/screen-banner.webp`);
+  assert.ok(enabled.state);
+  assert.equal(enabled.event.created_by, undefined);
+  await asRole("authenticated", admin, () => query("update public.events set screen_banner_enabled=false where id=$1", [event]));
+  assert.equal((await snapshot()).event.screen_banner_enabled, false);
+  assert.equal((await snapshot()).event.screen_banner_path, `events/${event}/screen-banner.webp`);
+});
 const first = await register("+77011234567");
 await test("new registrations are active by default and duplicate registration preserves a disabled status", async () => {
   const [created] = await query("select is_active from public.participants where id=$1", [first.participant_id]);

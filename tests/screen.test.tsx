@@ -15,6 +15,8 @@ const mock = vi.hoisted(() => ({
       ticket_digits: 3,
       status: "active",
       registration_enabled: true,
+      screen_banner_enabled: false,
+      screen_banner_path: null as string | null,
     },
     state: { mode: "waiting", current_draw_id: null as string | null, rehearsal_mode: false },
     participant_count: 10,
@@ -30,11 +32,42 @@ vi.mock("../src/hooks/useEventData", () => ({
   useScreen: () => ({ data: mock.snapshot, connection: "online" }),
 }));
 vi.mock("../src/hooks/useCountdown", () => ({ useCountdown: () => mock.remaining }));
-vi.mock("../src/services/events", () => ({ assetUrl: () => undefined }));
+vi.mock("../src/services/events", () => ({ assetUrl: (path: string | null) => path ? `/assets/${path}` : undefined }));
 vi.mock("canvas-confetti", () => ({ default: mock.confetti }));
 vi.mock("../src/components/ui/RegistrationQR", () => ({
   RegistrationQR: () => null,
 }));
+it("splits the screen only when advertising is enabled and restores the full screen when disabled", () => {
+  const previous = mock.snapshot;
+  mock.snapshot = {
+    ...previous,
+    state: { mode: "waiting", current_draw_id: null, rehearsal_mode: false },
+    event: { ...previous.event, screen_banner_enabled: false, screen_banner_path: "banner.webp" },
+  };
+  const view = render(<MemoryRouter><ScreenPage /></MemoryRouter>);
+  expect(view.container.querySelector(".big-screen-split")).toBeNull();
+  expect(screen.queryByRole("complementary", { name: "Рекламный баннер" })).toBeNull();
+  mock.snapshot.event.screen_banner_enabled = true;
+  for (const mode of ["waiting", "countdown", "drawing", "winner", "paused"]) {
+    mock.snapshot.state.mode = mode;
+    view.rerender(<MemoryRouter><ScreenPage /></MemoryRouter>);
+    expect(view.container.querySelector(".big-screen-split")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Рекламный баннер мероприятия" }).getAttribute("src")).toBe("/assets/banner.webp");
+  }
+  mock.snapshot.event.screen_banner_enabled = false;
+  view.rerender(<MemoryRouter><ScreenPage /></MemoryRouter>);
+  expect(view.container.querySelector(".big-screen-split")).toBeNull();
+  expect(screen.queryByRole("complementary")).toBeNull();
+  mock.snapshot = previous;
+});
+it("keeps the full screen when an enabled snapshot has no banner", () => {
+  const previous = mock.snapshot;
+  mock.snapshot = { ...previous, event: { ...previous.event, screen_banner_enabled: true, screen_banner_path: null } };
+  const view = render(<MemoryRouter><ScreenPage /></MemoryRouter>);
+  expect(view.container.querySelector(".big-screen-split")).toBeNull();
+  expect(screen.queryByRole("complementary")).toBeNull();
+  mock.snapshot = previous;
+});
 it("marks a rehearsal winner and explains that no real prize is awarded", () => {
   const previous = mock.snapshot;
   mock.snapshot = {
