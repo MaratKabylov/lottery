@@ -1,6 +1,6 @@
 export type Profile = {
   id: string;
-  role: "admin" | "host";
+  role: "admin" | "coadmin" | "host";
   display_name: string | null;
   created_at: string;
 };

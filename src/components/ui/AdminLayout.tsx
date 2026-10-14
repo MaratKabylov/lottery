@@ -31,7 +31,11 @@ export function AdminLayout() {
           <div>
             <strong>{profile?.display_name || "Организатор"}</strong>
             <small>
-              {profile?.role === "admin" ? "Администратор" : "Ведущий"}
+              {profile?.role === "admin"
+                ? "Администратор"
+                : profile?.role === "coadmin"
+                  ? "Соадминистратор"
+                  : "Ведущий"}
             </small>
           </div>
           <button

@@ -40,13 +40,16 @@ function Guard({
       <main className="public-shell">
         <Brand />
         <h1>Доступ ещё не назначен</h1>
-        <p>Попросите администратора добавить профиль с ролью admin или host.</p>
+        <p>
+          Попросите администратора добавить профиль с ролью admin, coadmin или
+          host.
+        </p>
         <button className="button" onClick={() => void supabase.auth.signOut()}>
           Выйти
         </button>
       </main>
     );
-  if (admin && auth.profile.role !== "admin")
+  if (admin && !["admin", "coadmin"].includes(auth.profile.role))
     return <Navigate to="/admin/events" replace />;
   return children;
 }

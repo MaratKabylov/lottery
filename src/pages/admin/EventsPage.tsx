@@ -109,7 +109,7 @@ export default function EventsPage() {
               className="event-card"
               key={event.id}
               to={
-                profile?.role === "admin"
+                profile?.role === "admin" || profile?.role === "coadmin"
                   ? `/admin/events/${event.id}`
                   : `/host/${event.id}`
               }

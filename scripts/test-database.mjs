@@ -32,8 +32,9 @@ for (const file of (await readdir("supabase/migrations"))
 const admin = "00000000-0000-0000-0000-000000000001";
 const host = "00000000-0000-0000-0000-000000000002";
 const secondAdmin = "00000000-0000-0000-0000-000000000003";
-await db.exec(`insert into auth.users values ('${admin}'),('${host}'),('${secondAdmin}');
-insert into public.profiles(id,role) values ('${admin}','admin'),('${host}','host'),('${secondAdmin}','admin');`);
+const coadmin = "00000000-0000-0000-0000-000000000004";
+await db.exec(`insert into auth.users values ('${admin}'),('${host}'),('${secondAdmin}'),('${coadmin}');
+insert into public.profiles(id,role) values ('${admin}','admin'),('${host}','host'),('${secondAdmin}','admin'),('${coadmin}','coadmin');`);
 const query = async (sql, args = []) => (await db.query(sql, args)).rows;
 const asRole = async (role, user, fn) => {
   await db.exec(
@@ -58,6 +59,7 @@ const [{ id: event }] = await query(
   [admin],
 );
 await query(`insert into public.event_staff(event_id,user_id) values ($1,$2)`, [event, host]);
+await query(`insert into public.event_staff(event_id,user_id) values ($1,$2)`, [event, coadmin]);
 const [{ id: prize }] = await query(
   `insert into public.prizes(event_id,name,quantity) values ($1,'Prize',10) returning id`,
   [event],
@@ -153,6 +155,7 @@ await test("host cannot change settings, read contacts, or elevate their role", 
     );
   });
 });
+let foreignEvent;
 await test("event owners are isolated and hosts only see explicit assignments", async () => {
   await asRole("authenticated", secondAdmin, async () => {
     assert.equal((await query("select public.is_admin() as ok"))[0].ok, true);
@@ -160,7 +163,7 @@ await test("event owners are isolated and hosts only see explicit assignments", 
   const [{ event: createdEvent }] = await asRole("authenticated", secondAdmin, () =>
     query("select public.create_event('Private','private',null) as event"),
   );
-  const foreignEvent = createdEvent.id;
+  foreignEvent = createdEvent.id;
   await asRole("authenticated", admin, async () => {
     assert.equal((await query("select id from public.events where id=$1", [foreignEvent])).length, 0);
     await assert.rejects(
@@ -179,6 +182,34 @@ await test("event owners are isolated and hosts only see explicit assignments", 
   });
   await asRole("authenticated", secondAdmin, async () => {
     await query("delete from public.event_staff where event_id=$1 and user_id=$2", [foreignEvent, host]);
+  });
+});
+await test("co-administrators have full rights only on assigned events", async () => {
+  await asRole("authenticated", coadmin, async () => {
+    assert.equal((await query("select public.is_admin() as ok"))[0].ok, false);
+    assert.equal((await query("select id from public.events where id=$1", [event])).length, 1);
+    assert.equal((await query("select id from public.events where id=$1", [foreignEvent])).length, 0);
+    assert.equal(
+      (await query("update public.events set description='Managed' where id=$1 returning id", [event])).length,
+      1,
+    );
+    assert.equal(
+      (await query("update public.participants set is_active=false where id=$1 returning id", [first.participant_id])).length,
+      1,
+    );
+    await query("update public.participants set is_active=true where id=$1", [first.participant_id]);
+    const [{ id: managedPrize }] = await query(
+      "insert into public.prizes(event_id,name) values($1,'Managed prize') returning id",
+      [event],
+    );
+    await query("delete from public.prizes where id=$1", [managedPrize]);
+    await query("delete from public.event_staff where event_id=$1 and user_id=$2", [event, host]);
+    await query("insert into public.event_staff(event_id,user_id) values($1,$2)", [event, host]);
+    assert.ok((await query("select id from public.audit_logs where event_id=$1", [event])).length > 0);
+    await assert.rejects(
+      query("select public.create_event('Denied','coadmin-denied',null)"),
+      /Доступ запрещён/,
+    );
   });
 });
 await test("database rejects duplicate tickets and cross-event references", async () => {

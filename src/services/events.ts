@@ -73,17 +73,17 @@ export async function getStaffStats(eventId: string) {
   return data;
 }
 
-export async function listHosts() {
+export async function listStaffProfiles(role: "coadmin" | "host") {
   const { data, error } = await supabase
     .from("profiles")
     .select("id,display_name")
-    .eq("role", "host")
+    .eq("role", role)
     .order("display_name", { ascending: true });
   if (error) throw error;
   return data;
 }
 
-export async function listEventHostIds(eventId: string) {
+export async function listEventStaffIds(eventId: string) {
   const { data, error } = await supabase
     .from("event_staff")
     .select("user_id")
@@ -92,7 +92,7 @@ export async function listEventHostIds(eventId: string) {
   return data.map((row) => row.user_id);
 }
 
-export async function setEventHost(
+export async function setEventStaff(
   eventId: string,
   userId: string,
   enabled: boolean,

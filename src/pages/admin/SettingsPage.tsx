@@ -7,10 +7,10 @@ import { EventNav } from "../../components/ui/EventNav";
 import { ErrorNotice, Loading } from "../../components/ui/Feedback";
 import {
   assetUrl,
-  listEventHostIds,
-  listHosts,
+  listEventStaffIds,
+  listStaffProfiles,
   saveEvent,
-  setEventHost,
+  setEventStaff,
   uploadAsset,
 } from "../../services/events";
 import type { Event } from "../../types/database";
@@ -32,10 +32,17 @@ export default function SettingsPage() {
   const data = useEventData(eventId);
   const client = useQueryClient();
   const action = useAction();
-  const hosts = useQuery({ queryKey: ["hosts"], queryFn: listHosts });
-  const assignedHosts = useQuery({
-    queryKey: ["event-hosts", eventId],
-    queryFn: () => listEventHostIds(eventId),
+  const coadmins = useQuery({
+    queryKey: ["staff-profiles", "coadmin"],
+    queryFn: () => listStaffProfiles("coadmin"),
+  });
+  const hosts = useQuery({
+    queryKey: ["staff-profiles", "host"],
+    queryFn: () => listStaffProfiles("host"),
+  });
+  const assignedStaff = useQuery({
+    queryKey: ["event-staff", eventId],
+    queryFn: () => listEventStaffIds(eventId),
     enabled: Boolean(eventId),
   });
   if (data.event.isPending) return <Loading />;
@@ -172,20 +179,59 @@ export default function SettingsPage() {
         </div>
       </form>
       <section className="panel">
+        <h2>Соадминистраторы мероприятия</h2>
+        <p className="muted">
+          Соадминистраторы имеют полный доступ к этому мероприятию: настройкам,
+          участникам, призам, истории и команде.
+        </p>
+        <ErrorNotice error={coadmins.error || assignedStaff.error} />
+        {coadmins.isPending || assignedStaff.isPending ? (
+          <Loading />
+        ) : !coadmins.data?.length ? (
+          <p className="muted">Профили с ролью coadmin пока не добавлены.</p>
+        ) : (
+          <div className="form-grid">
+            {coadmins.data.map((coadmin) => {
+              const assigned = assignedStaff.data?.includes(coadmin.id) ?? false;
+              return (
+                <label className="checkbox-label" key={coadmin.id}>
+                  <input
+                    type="checkbox"
+                    checked={assigned}
+                    onChange={(change) => {
+                      const enabled = change.currentTarget.checked;
+                      void action.run(
+                        () => setEventStaff(eventId, coadmin.id, enabled),
+                        () => {
+                          void client.invalidateQueries({
+                            queryKey: ["event-staff", eventId],
+                          });
+                        },
+                      );
+                    }}
+                  />
+                  {coadmin.display_name || coadmin.id}
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      <section className="panel">
         <h2>Ведущие мероприятия</h2>
         <p className="muted">
           Назначенные ведущие увидят только это мероприятие и смогут проводить
           розыгрыш, но не менять его настройки.
         </p>
-        <ErrorNotice error={hosts.error || assignedHosts.error} />
-        {hosts.isPending || assignedHosts.isPending ? (
+        <ErrorNotice error={hosts.error || assignedStaff.error} />
+        {hosts.isPending || assignedStaff.isPending ? (
           <Loading />
         ) : !hosts.data?.length ? (
           <p className="muted">Профили с ролью host пока не добавлены.</p>
         ) : (
           <div className="form-grid">
             {hosts.data.map((host) => {
-              const assigned = assignedHosts.data?.includes(host.id) ?? false;
+              const assigned = assignedStaff.data?.includes(host.id) ?? false;
               return (
                 <label className="checkbox-label" key={host.id}>
                   <input
@@ -194,10 +240,10 @@ export default function SettingsPage() {
                     onChange={(change) => {
                       const enabled = change.currentTarget.checked;
                       void action.run(
-                        () => setEventHost(eventId, host.id, enabled),
+                        () => setEventStaff(eventId, host.id, enabled),
                         () => {
                           void client.invalidateQueries({
-                            queryKey: ["event-hosts", eventId],
+                            queryKey: ["event-staff", eventId],
                           });
                         },
                       );
